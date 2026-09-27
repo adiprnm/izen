@@ -1,0 +1,37 @@
+# frozen_string_literal: true
+
+module <%= @namespace %>
+  # All database access for <%= @namespace %> lives here.
+  class Repository < Base::Repository
+    def all
+      to_models(query("SELECT * FROM <%= @name %> ORDER BY id DESC"))
+    end
+
+    def find(id)
+      to_model(find_one("SELECT * FROM <%= @name %> WHERE id = ? LIMIT 1", [ id ]))
+    end
+
+    def create(model)
+      row = find_one(<<~SQL, [ <%= @fields.map { |field| bind_value(field) }.join(", ") %> ])
+        INSERT INTO <%= @name %> (<%= @fields.map(&:name).join(", ") %>)
+        VALUES (<%= Array.new(@fields.size, "?").join(", ") %>)
+        RETURNING *
+      SQL
+      to_model(row)
+    end
+
+    def update(model)
+      row = find_one(<<~SQL, [ <%= (@fields.map { |field| bind_value(field) } + ["model.id"]).join(", ") %> ])
+        UPDATE <%= @name %>
+        SET <%= (@fields.map { |field| "#{field.name} = ?" } + ["updated_at = datetime('now')"]).join(", ") %>
+        WHERE id = ?
+        RETURNING *
+      SQL
+      to_model(row)
+    end
+
+    def delete(model)
+      db.execute("DELETE FROM <%= @name %> WHERE id = ?", [ model.id ])
+    end
+  end
+end

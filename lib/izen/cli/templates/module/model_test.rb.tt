@@ -1,0 +1,17 @@
+# frozen_string_literal: true
+
+require_relative "../test_helper"
+
+module <%= @namespace %>
+  class ModelTest < Minitest::Test
+    def test_declares_domain_attributes_with_types
+      assert_equal [ <%= (["id"] + @fields.map(&:name) + %w[created_at updated_at]).map { |name| ":#{name}" }.join(", ") %> ], Model.attributes.keys
+      assert_equal <%= ruby_type(@primary) %>, Model.attributes[:<%= @primary.name %>][:type]
+    end
+
+    def test_builds_attributes_from_a_hash
+      model = Model.new(<%= model_hash_literal %>)
+      refute_nil model
+    end
+  end
+end

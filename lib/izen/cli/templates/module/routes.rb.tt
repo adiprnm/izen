@@ -1,0 +1,20 @@
+    r.on "<%= @name %>" do
+      controller = <%= @namespace %>::Controller.new(self)
+
+      r.get("new") { controller.new }
+
+      r.on Integer do |id|
+        r.get("edit")    { controller.edit(id) }
+        r.post("delete") { controller.destroy(id, r) }
+
+        r.is do
+          r.get  { controller.show(id) }
+          r.post { controller.update(id, r) }
+        end
+      end
+
+      r.is do
+        r.get  { controller.index }
+        r.post { controller.create(r) }
+      end
+    end

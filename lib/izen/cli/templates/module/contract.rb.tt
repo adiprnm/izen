@@ -1,0 +1,12 @@
+# frozen_string_literal: true
+
+module <%= @namespace %>
+  # Data contract: the parameters accepted on create/update.
+  class Contract < Base::Contract
+    params do
+<% @fields.each do |field| -%>
+      <%= field.required ? "required" : "optional" %> :<%= field.name %>, <%= ruby_type(field) %><%= field.default.nil? ? "" : ", default: #{field.default.inspect}" %>
+<% end -%>
+    end
+  end
+end

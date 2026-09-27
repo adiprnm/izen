@@ -1,0 +1,8 @@
+CREATE TABLE <%= @name %> (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+<% @fields.each do |field| -%>
+  <%= field.name.ljust(11) %> <%= sql_type(field) %>,
+<% end -%>
+  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);

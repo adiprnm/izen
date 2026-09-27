@@ -1,0 +1,18 @@
+<p><a href="/<%= @name %>">&larr; kembali</a></p>
+
+<h1>Ubah <%= @namespace %></h1>
+
+<%% if errors.any? %>
+  <ul class="errors">
+    <%% errors.each do |key, messages| %>
+      <%% messages.each do |message| %>
+        <li><%%= key %> <%%= message %></li>
+      <%% end %>
+    <%% end %>
+  </ul>
+<%% end %>
+
+<form method="post" action="/<%= @name %>/<%%= item.id %>">
+<%= form_fields %>
+  <button type="submit">Perbarui</button>
+</form>

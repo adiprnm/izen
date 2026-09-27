@@ -1,0 +1,20 @@
+# frozen_string_literal: true
+
+require_relative "../test_helper"
+
+module <%= @namespace %>
+  class ContractTest < Minitest::Test
+    def test_accepts_valid_params
+      result = Contract.new.call(<%= param_hash_literal %>)
+      assert result.success?, result.errors.full_messages.inspect
+    end
+<% if (required = first_required) -%>
+
+    def test_requires_<%= required.name %>
+      result = Contract.new.call(<%= param_hash_literal(required.name => "") %>)
+      refute result.success?
+      assert_includes result.errors[:<%= required.name %>], "wajib diisi"
+    end
+<% end -%>
+  end
+end

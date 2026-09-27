@@ -1,0 +1,93 @@
+# Custom cop: align keyword-argument values in multi-line method definitions
+# (e.g. `initialize`). RuboCop has no built-in cop for this.
+require:
+  - ./lib/rubocop/cop/layout/keyword_argument_value_alignment
+
+inherit_gem:
+  rubocop-rails-omakase: rubocop.yml
+
+AllCops:
+  NewCops: enable
+  SuggestExtensions: false
+
+# --- Project layout rules ---------------------------------------------------
+#
+# Omakase disables Layout by default. These are the project-specific rules we
+# opt back in:
+#
+#   1. align `=` across consecutive assignments
+#   2. wrap long parameter/argument lists, closing paren on its own line
+#   3. align values vertically in multiline hashes
+
+# 1. Align the `=` of consecutive assignments.
+Layout/ExtraSpacing:
+  Enabled: true
+  ForceEqualSignAlignment: true
+
+# 2. Long lines (including long parameter/argument lists) must wrap.
+Layout/LineLength:
+  Enabled: true
+  Max: 120
+
+Layout/FirstParameterIndentation:
+  Enabled: true
+  EnforcedStyle: consistent
+
+Layout/ParameterAlignment:
+  Enabled: true
+  EnforcedStyle: with_fixed_indentation
+
+Layout/MultilineMethodDefinitionBraceLayout:
+  Enabled: true
+  EnforcedStyle: new_line
+
+Layout/FirstArgumentIndentation:
+  Enabled: true
+  EnforcedStyle: consistent
+
+Layout/ArgumentAlignment:
+  Enabled: true
+  EnforcedStyle: with_fixed_indentation
+
+Layout/MultilineMethodCallBraceLayout:
+  Enabled: true
+  EnforcedStyle: new_line
+
+Layout/ClosingParenthesisIndentation:
+  Enabled: true
+
+# Keep wrapped binary expressions aligned with the right-hand side, so the
+# aligned `=` above doesn't leave the continuation dangling.
+Layout/MultilineOperationIndentation:
+  Enabled: true
+  EnforcedStyle: aligned
+
+# 3. Align keys/separators (and therefore values) in multiline hashes.
+Layout/HashAlignment:
+  Enabled: true
+  EnforcedHashRocketStyle: table
+  EnforcedColonStyle: table
+
+# Put the first argument/parameter on its own line once a call/definition
+# spans multiple lines, so nested calls read as:
+#   repository.create(
+#     Model.new(
+#       id:   1,
+#     )
+#   )
+Layout/FirstMethodArgumentLineBreak:
+  Enabled: true
+Layout/FirstMethodParameterLineBreak:
+  Enabled: true
+
+# One argument/parameter per line in a multi-line call/definition, so
+# keyword-argument hashes can be aligned vertically by Layout/HashAlignment.
+Layout/MultilineMethodArgumentLineBreaks:
+  Enabled: true
+Layout/MultilineMethodParameterLineBreaks:
+  Enabled: true
+
+# 4. Align keyword-argument values (defaults) in multi-line method definitions
+#    such as `initialize`, so the values line up in a column.
+Layout/KeywordArgumentValueAlignment:
+  Enabled: true

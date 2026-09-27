@@ -1,0 +1,13 @@
+# frozen_string_literal: true
+
+module <%= @namespace %>
+  # Domain object. Declares the attributes and types it holds.
+  class Model < Base::Model
+    attribute :id, Integer, required: false
+<% @fields.each do |field| -%>
+    attribute :<%= field.name %>, <%= ruby_type(field) %><%= field.required ? "" : ", required: false" %>
+<% end -%>
+    attribute :created_at, Time, required: false
+    attribute :updated_at, Time, required: false
+  end
+end

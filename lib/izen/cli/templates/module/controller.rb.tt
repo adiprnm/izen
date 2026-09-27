@@ -1,0 +1,69 @@
+# frozen_string_literal: true
+
+module <%= @namespace %>
+  class Controller < Base::Controller
+    def initialize(app, repository: Repository.new)
+      super(app)
+      @repository = repository
+    end
+
+    # read: controller -> repository -> view
+    def index
+      render("<%= @name %>/index", items: repository.all)
+    end
+
+    def show(id)
+      item = repository.find(id)
+      return not_found unless item
+
+      render("<%= @name %>/show", item: item)
+    end
+
+    def new
+      render("<%= @name %>/new", item: Model.new(<%= @fields.map { |field| "#{field.name}: nil" }.join(", ") %>), errors: {})
+    end
+
+    # write: controller -> contract -> model -> repository -> view
+    def create(request)
+      result = Contract.new.call(request.params)
+
+      if result.success?
+        repository.create(Model.new(result.to_h))
+        flash("notice", "Data <%= @namespace %> berhasil dibuat.")
+        request.redirect("/<%= @name %>")
+      else
+        render("<%= @name %>/new", item: Model.new(request.params, strict: false), errors: result.errors.to_h)
+      end
+    end
+
+    def edit(id)
+      item = repository.find(id)
+      return not_found unless item
+
+      render("<%= @name %>/edit", item: item, errors: {})
+    end
+
+    def update(id, request)
+      result = Contract.new.call(request.params)
+
+      if result.success?
+        repository.update(Model.new(result.to_h.merge(id: id)))
+        flash("notice", "Data <%= @namespace %> berhasil diperbarui.")
+        request.redirect("/<%= @name %>")
+      else
+        render("<%= @name %>/edit", item: Model.new(request.params.merge(id: id), strict: false), errors: result.errors.to_h)
+      end
+    end
+
+    def destroy(id, request)
+      item = repository.find(id)
+      repository.delete(item) if item
+      flash("notice", "Data <%= @namespace %> berhasil dihapus.")
+      request.redirect("/<%= @name %>")
+    end
+
+    private
+
+    attr_reader :repository
+  end
+end

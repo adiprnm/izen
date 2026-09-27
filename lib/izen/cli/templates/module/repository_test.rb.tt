@@ -1,0 +1,38 @@
+# frozen_string_literal: true
+
+require_relative "../test_helper"
+
+module <%= @namespace %>
+  class RepositoryTest < TestSupport::DatabaseTest
+    def setup
+      super
+      @repository = Repository.new
+    end
+
+    def test_create_and_find
+      created = @repository.create(Model.new(<%= model_hash_literal %>))
+      assert_instance_of Model, created
+      refute_nil created.id
+
+      found = @repository.find(created.id)
+      assert_instance_of Model, found
+    end
+
+    def test_all
+      @repository.create(Model.new(<%= model_hash_literal %>))
+      refute_empty @repository.all
+    end
+
+    def test_update
+      created = @repository.create(Model.new(<%= model_hash_literal %>))
+      @repository.update(Model.new(<%= model_hash_literal %>.merge(id: created.id)))
+      assert_instance_of Model, @repository.find(created.id)
+    end
+
+    def test_delete
+      created = @repository.create(Model.new(<%= model_hash_literal %>))
+      @repository.delete(created)
+      assert_nil @repository.find(created.id)
+    end
+  end
+end

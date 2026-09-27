@@ -1,0 +1,7 @@
+<p><a href="/<%= @name %>">&larr; kembali</a></p>
+
+<h1><%%= item.<%= @primary.name %> %></h1>
+
+<dl>
+<%= field_rows %>
+</dl>

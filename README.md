@@ -1,0 +1,69 @@
+# Izen
+
+**Izen** — a lightweight, module-first core for [Roda](https://roda.jeremyevans.net/)
++ SQLite apps. No ORM, no autoloader, no framework magic.
+
+The name comes from **Rubizen** (Ruby Zen): the core is small, plain Ruby and
+deliberately boring. In Basque, *izen* means "name" — a fitting double meaning
+for a layer built around models and schemas.
+
+## What's inside
+
+| Piece | Purpose |
+|---|---|
+| `Izen::Base::Model` | Typed attribute value object (lean `dry-struct`) |
+| `Izen::Base::Contract` | Dependency-free params validation (lean `dry-validation`) |
+| `Izen::Base::Repository` | Thin wrapper over the SQLite connection, raw SQL |
+| `Izen::Base::Controller` | Roda-backed controller base (render, flash, request context) |
+| `Izen::Base::Session` | Signed-cookie sessions without OpenSSL |
+| `Izen::Base::Job` | Single-thread background job base class + worker |
+| `Izen::Base::Mailer` | Transactional mailer base class |
+| `Izen::Database` | Thread-local SQLite connection (WAL + foreign keys) |
+| `Izen::HTTP` | Small HTTP client supporting every HTTP method |
+| `Izen::Encryptor` | AES-256-GCM for secrets stored in the database |
+| `Izen::Dotenv` | Minimal `.env` loader (no dependency) |
+| `Izen::Cli` | Migrations + module scaffolding |
+
+## Installation
+
+```ruby
+# Gemfile
+gem "izen"
+```
+
+```sh
+bundle install
+```
+
+## Configuration
+
+Izen resolves every path against a single **host application root**, which
+defaults to `Dir.pwd`:
+
+```ruby
+# config.ru / boot file, if the app is not started from its own root
+Izen.configure do |config|
+  config.root = File.expand_path(__dir__)
+end
+```
+
+The root is where `config/database.yaml`, `migrations/`, `storage/`, `app/`,
+`views/` and `.env` live.
+
+## The CLI
+
+```sh
+izen migration generate create_users   # empty up/down migration pair
+izen migration migrate                 # run pending up migrations
+izen migration rollback [STEP]         # roll back the last STEP migrations
+izen migration status                  # show applied/pending migrations
+
+izen module new posts title:string body:text   # scaffold a domain module
+```
+
+`izen module new` writes `app/<name>/{model,contract,repository,controller}.rb`,
+colocated tests, views, a migration and a route entry in `app.rb`.
+
+## License
+
+MIT — see [LICENSE.txt](LICENSE.txt).
