@@ -93,10 +93,14 @@ izen migration status                  # show applied/pending migrations
 izen module new posts title:string body:text   # scaffold a domain module
 ```
 
-`izen new` writes a runnable Roda + SQLite skeleton (`app.rb`, `config.ru`,
-`config/database.yaml`, `views/layout.erb`, `Rakefile`, a smoke test and the
-`app/`, `migrations/` and `storage/` directories). Pass `--force` to scaffold
-into a non-empty directory or `--no-test` to skip the test files.
+`izen new` writes a runnable Roda + SQLite skeleton: `app.rb`, `config.ru`,
+`config/database.yaml`, `views/layout.erb`, `Rakefile`, `README.md`,
+`.env.example`, a smoke test, and the `app/`, `migrations/` and `storage/`
+directories. The generated `.gitignore` ignores Bundler caches, local `.env`
+files (keeping `.env.example`), `/log/`, `/tmp/` and `/coverage/`, the SQLite
+databases and session secret under `storage/`, Spinel's `native/` build output,
+and editor/OS noise. Pass `--force` to scaffold into a non-empty directory or
+`--no-test` to skip the test files.
 
 `izen module new` writes `app/<name>/{model,contract,repository,controller}.rb`,
 colocated tests, views, a migration and a route entry in `app.rb`.
