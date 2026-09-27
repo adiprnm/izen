@@ -3,6 +3,8 @@
 require "erb"
 require "fileutils"
 
+require_relative "style"
+
 module Izen
   module Cli
     # Scaffolds a domain module: app files, colocated tests, views, a migration
@@ -100,14 +102,14 @@ module Izen
         path = File.join(@root, relative_path)
         FileUtils.mkdir_p(File.dirname(path))
         File.write(path, content)
-        puts "created #{relative_path}"
+        puts Style.created(relative_path)
       end
 
       def ensure_target!
         dir = File.join(@root, "app", @name)
         return unless Dir.exist?(dir) && !@force
 
-        abort "app/#{@name} already exists (use --force to overwrite)"
+        abort Style.error("app/#{@name} already exists (use --force to overwrite)")
       end
 
       # Renders a .tt template in this generator's binding.
@@ -123,13 +125,13 @@ module Izen
         source = File.read(path)
 
         if source.include?("r.on \"#{@name}\" do")
-          puts "skipped routes (/#{@name} already registered in app.rb)"
+          puts Style.skipped("routes (/#{@name} already registered in app.rb)")
           return
         end
 
         marker = source.index(ROUTES_MARKER)
         unless marker
-          puts "! could not find #{ROUTES_MARKER.inspect} in app.rb; add these routes manually:"
+          puts Style.warning("could not find #{ROUTES_MARKER.inspect} in app.rb; add these routes manually:")
           puts routes_snippet
           return
         end
@@ -138,7 +140,7 @@ module Izen
         line_start = line_start ? line_start + 1 : 0
         source.insert(line_start, "#{routes_snippet}\n")
         File.write(path, source)
-        puts "updated app.rb (added /#{@name} routes)"
+        puts Style.updated("app.rb (added /#{@name} routes)")
       end
 
       def routes_snippet
@@ -249,8 +251,10 @@ module Izen
           type = (type || "string").downcase
 
           unless SUPPORTED_TYPES.include?(type)
-            abort "unsupported field type #{type.inspect} for :#{name} " \
-                  "(supported: #{SUPPORTED_TYPES.join(", ")})"
+            supported = SUPPORTED_TYPES.join(", ")
+            abort Style.error(
+              "unsupported field type #{type.inspect} for :#{name} (supported: #{supported})"
+            )
           end
 
           required = !%w[text boolean].include?(type)
@@ -270,7 +274,7 @@ module Izen
                          .downcase
 
         unless normalized.match?(/\A[a-z][a-z0-9_]*\z/)
-          abort "invalid module name #{name.inspect} (use snake_case, e.g. blog_posts)"
+          abort Style.error("invalid module name #{name.inspect} (use snake_case, e.g. blog_posts)")
         end
 
         normalized
@@ -280,10 +284,10 @@ module Izen
         normalized = name.to_s.tr("-", "_").downcase
 
         unless normalized.match?(/\A[a-z][a-z0-9_]*\z/)
-          abort "invalid field name #{name.inspect}"
+          abort Style.error("invalid field name #{name.inspect}")
         end
 
-        abort "field name #{normalized.inspect} is reserved" if RESERVED_NAMES.include?(normalized)
+        abort Style.error("field name #{normalized.inspect} is reserved") if RESERVED_NAMES.include?(normalized)
 
         normalized
       end
@@ -294,8 +298,11 @@ module Izen
 
       def summary
         puts
-        puts "Module #{@namespace} scaffolded in app/#{@name}."
-        puts "Run `bundle exec izen migration migrate` to create the `#{@name}` table." if @migration
+        puts "#{Style.heading("Module #{@namespace}")} scaffolded in #{Style.path("app/#{@name}")}."
+        if @migration
+          puts "Run #{Style.step('bundle exec izen migration migrate')} to create the " \
+               "#{Style.path(@name)} table."
+        end
       end
     end
   end

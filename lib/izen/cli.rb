@@ -3,6 +3,7 @@
 require "fileutils"
 
 require_relative "database"
+require_relative "cli/style"
 require_relative "cli/module_generator"
 require_relative "cli/project_generator"
 
@@ -69,7 +70,7 @@ module Izen
       { "up" => up_sql, "down" => down_sql }.each do |direction, sql|
         path = File.join(migrations_dir, "#{version}_#{name}.#{direction}.sql")
         File.write(path, sql)
-        puts "created #{relative(path)}"
+        puts Style.created(relative(path))
       end
 
       version
@@ -77,7 +78,7 @@ module Izen
 
     # Creates an empty up/down pair with the next sequential version.
     def generate(name)
-      abort "migration name is required" if name.nil? || name.empty?
+      abort Style.error("migration name is required") if name.nil? || name.empty?
 
       write_migration(name, "-- up migration: #{name}\n", "-- down migration: #{name}\n")
     end
@@ -94,7 +95,7 @@ module Izen
       pending = migration_files(".up.sql").reject { |file| applied.include?(version_of(file)) }
 
       if pending.empty?
-        puts "nothing to migrate"
+        puts Style.nothing("nothing to migrate")
         return
       end
 
@@ -103,7 +104,7 @@ module Izen
           connection.execute_batch(File.read(file))
           connection.execute("INSERT INTO schema_migrations (version) VALUES (?)", [ version_of(file) ])
         end
-        puts "migrated #{File.basename(file)}"
+        puts Style.migrated(File.basename(file))
       end
     end
 
@@ -119,7 +120,7 @@ module Izen
                 .first(step)
 
       if targets.empty?
-        puts "nothing to rollback"
+        puts Style.nothing("nothing to rollback")
         return
       end
 
@@ -128,7 +129,7 @@ module Izen
           connection.execute_batch(File.read(file))
           connection.execute("DELETE FROM schema_migrations WHERE version = ?", [ version_of(file) ])
         end
-        puts "rolled back #{File.basename(file)}"
+        puts Style.rolled_back(File.basename(file))
       end
     end
 
@@ -138,7 +139,7 @@ module Izen
 
       migration_files(".up.sql").each do |file|
         state = applied.include?(version_of(file)) ? "up" : "pending"
-        puts format("%-8s %s", state, File.basename(file))
+        puts Style.migration_status(state, File.basename(file))
       end
     end
 
@@ -174,7 +175,7 @@ module Izen
       when "-h", "--help", nil
         puts usage
       else
-        abort "unknown command group: #{group} (run with --help)"
+        abort Style.error("unknown command group: #{group} (run with --help)")
       end
     end
 
@@ -192,7 +193,7 @@ module Izen
       when nil, "-h", "--help"
         puts usage
       else
-        abort "unknown migration command: #{action} (run with --help)"
+        abort Style.error("unknown migration command: #{action} (run with --help)")
       end
     end
 
@@ -204,7 +205,7 @@ module Izen
       when nil, "-h", "--help"
         puts usage
       else
-        abort "unknown module command: #{action} (run with --help)"
+        abort Style.error("unknown module command: #{action} (run with --help)")
       end
     end
 
@@ -227,15 +228,17 @@ module Izen
       when nil, "-h", "--help"
         puts native_usage
       else
-        abort "unknown native command: #{action} (run with --help)"
+        abort Style.error("unknown native command: #{action} (run with --help)")
       end
     end
 
     def require_native!
       require "izen/native"
     rescue LoadError => error
-      abort "native build needs the prism and erubi gems (#{error.message}).\n" \
-            "Add them to your Gemfile: gem \"prism\"; gem \"erubi\""
+      abort Style.error(
+        "native build needs the prism and erubi gems (#{error.message}).\n" \
+        "Add them to your Gemfile: gem \"prism\"; gem \"erubi\""
+      )
     end
 
     # Parses the options shared by the native commands.
@@ -256,8 +259,8 @@ module Izen
         when "--pack-out"   then options[:pack_out]   = argv.shift
         when "--spinel"     then options[:spinel]     = true
         when "-h", "--help" then puts native_usage; exit 0
-        when /\A--/         then abort "unknown option: #{arg}"
-        else abort "unexpected argument: #{arg}"
+        when /\A--/         then abort Style.error("unknown option: #{arg}")
+        else abort Style.error("unexpected argument: #{arg}")
         end
       end
 
@@ -268,23 +271,23 @@ module Izen
     def native_generate(argv)
       options = native_options(argv)
       path    = builder(options).generate(spinel: options[:spinel])
-      puts "generated #{relative(path)}"
+      puts Style.generated(relative(path))
     end
 
     def native_build(argv)
       options = native_options(argv)
       binary  = builder(options).build
-      puts "built #{relative(binary)}"
+      puts Style.built(relative(binary))
     rescue Native::SpinNotFound => error
-      abort error.message
+      abort Style.error(error.message)
     end
 
     def native_pack(argv)
       options = native_options(argv)
       path    = builder(options).pack(pack_out: options[:pack_out] || "pack")
-      puts "packed #{relative(path)}"
+      puts Style.packed(relative(path))
     rescue Native::SpinNotFound => error
-      abort error.message
+      abort Style.error(error.message)
     end
 
     def native_run(argv)
@@ -295,7 +298,7 @@ module Izen
     def native_clean(argv)
       options = native_options(argv)
       builder(options).clean
-      puts "removed #{relative(options[:out])}"
+      puts Style.removed(relative(options[:out]))
     end
 
     def builder(options)
@@ -308,42 +311,42 @@ module Izen
     end
 
     def native_usage
-      <<~USAGE
-        Usage: izen native <command> [options]
-
-        Lower this Izen app to a Spinel `spin` project and build one native
-        binary (no interpreter, no Rack, no Puma).
-
-        Commands:
-          native generate               write the spin project (CRuby target)
-          native build                  generate --spinel and run `spin build`
-          native pack                   generate --spinel and run `spin pack`
-          native run                    generate (CRuby) and boot bin/serve.rb
-          native clean                  remove the generated directory
-
-        Options:
-          --source PATH                 app root (default: #{root})
-          --out PATH                    output directory (default: native/)
-          --name NAME                   binary/package name (default: app dir name)
-          --spinel-bin PATH             directory holding the `spin` executable
-          --spinel                      target the Spinel build (FFI sqlite)
-          --port PORT                   port for `native run`
-          --pack-out PATH               pack directory for `native pack`
-
-        Environment:
-          SPINEL_BIN                    same as --spinel-bin
-
-        Examples:
-          izen native generate --spinel
-          izen native build --spinel-bin ~/tools/spinel/bin
-          izen native run --port 3000
-      USAGE
+      [
+        "#{Style.heading('Usage:')} #{Style.command('izen native')} <command> [options]",
+        "",
+        "Lower this Izen app to a Spinel `spin` project and build one native",
+        "binary (no interpreter, no Rack, no Puma).",
+        "",
+        Style.heading("Commands:"),
+        help_entry("native generate", "write the spin project (CRuby target)"),
+        help_entry("native build", "generate --spinel and run `spin build`"),
+        help_entry("native pack", "generate --spinel and run `spin pack`"),
+        help_entry("native run", "generate (CRuby) and boot bin/serve.rb"),
+        help_entry("native clean", "remove the generated directory"),
+        "",
+        Style.heading("Options:"),
+        help_flag("--source PATH", "app root (default: #{root})"),
+        help_flag("--out PATH", "output directory (default: native/)"),
+        help_flag("--name NAME", "binary/package name (default: app dir name)"),
+        help_flag("--spinel-bin PATH", "directory holding the `spin` executable"),
+        help_flag("--spinel", "target the Spinel build (FFI sqlite)"),
+        help_flag("--port PORT", "port for `native run`"),
+        help_flag("--pack-out PATH", "pack directory for `native pack`"),
+        "",
+        Style.heading("Environment:"),
+        help_flag("SPINEL_BIN", "same as --spinel-bin"),
+        "",
+        Style.heading("Examples:"),
+        "  #{Style.command('izen native generate --spinel')}",
+        "  #{Style.command('izen native build --spinel-bin ~/tools/spinel/bin')}",
+        "  #{Style.command('izen native run --port 3000')}"
+      ].join("\n")
     end
 
     # Parses `module new NAME [field:type ...] [options]`.
     def module_new(argv)
       name = argv.shift
-      abort "module name is required" if name.nil? || name.empty?
+      abort Style.error("module name is required") if name.nil? || name.empty?
 
       options = {}
       fields  = []
@@ -355,7 +358,7 @@ module Izen
         when "--no-migration" then options[:migration] = false
         when "--no-routes"    then options[:routes]    = false
         when "--force"        then options[:force]     = true
-        when /\A--/           then abort "unknown option: #{arg}"
+        when /\A--/           then abort Style.error("unknown option: #{arg}")
         else
           fields << (arg.include?(":") ? arg.split(":", 2) : [ arg, "string" ])
         end
@@ -379,9 +382,9 @@ module Izen
         case arg
         when "--force"   then options[:force] = true
         when "--no-test" then options[:tests] = false
-        when /\A--/      then abort "unknown option: #{arg}"
+        when /\A--/      then abort Style.error("unknown option: #{arg}")
         else
-          abort "unexpected argument: #{arg}" if name
+          abort Style.error("unexpected argument: #{arg}") if name
 
           name = arg
         end
@@ -391,52 +394,68 @@ module Izen
     end
 
     def usage
-      <<~USAGE
-        Usage: izen <group> <command> [args]
+      [
+        "#{Style.heading('Usage:')} #{Style.command('izen')} <group> <command> [args]",
+        "",
+        Style.heading("New project:"),
+        help_entry("new NAME", "scaffold a new project in ./NAME"),
+        "",
+        Style.heading("Migration:"),
+        help_entry("migration generate NAME", "create an empty up/down migration pair"),
+        help_entry("migration migrate", "run all pending up migrations"),
+        help_entry("migration rollback [STEP]", "roll back the last STEP migrations (default 1)"),
+        help_entry("migration status", "show applied and pending migrations"),
+        "",
+        Style.heading("Module:"),
+        help_entry("module new NAME", "scaffold a domain module"),
+        help_entry("[field:type ...]", "fields to generate (see field types below)"),
+        "",
+        Style.heading("Native:"),
+        help_entry("native generate", "write a Spinel `spin` project"),
+        help_entry("native build", "compile one native binary"),
+        help_entry("native pack", "produce the C-only pack directory"),
+        help_entry("native run", "boot the generated app on CRuby"),
+        help_entry("native clean", "remove the generated directory"),
+        "",
+        Style.heading("New options:"),
+        help_flag("--no-test", "skip test files"),
+        help_flag("--force", "scaffold into a non-empty directory"),
+        "",
+        Style.heading("Module options:"),
+        help_flag("--no-test", "skip test files"),
+        help_flag("--no-views", "skip view templates"),
+        help_flag("--no-migration", "skip the migration pair"),
+        help_flag("--no-routes", "skip adding routes to app.rb"),
+        help_flag("--force", "overwrite an existing module directory"),
+        "",
+        Style.heading("Field types:"),
+        "  string (default), text, integer, float, boolean, date, datetime, time",
+        "",
+        Style.heading("Examples:"),
+        "  #{Style.command('izen new blog')}",
+        "  #{Style.command('izen migration generate create_users')}",
+        "  #{Style.command('izen migration migrate')}",
+        "  #{Style.command('izen migration rollback 2')}",
+        "  #{Style.command('izen module new posts title:string body:text')}",
+        "",
+        "#{Style.heading('Environment:')} APP_ENV=#{Style.path(Database.env)}"
+      ].join("\n")
+    end
 
-        New project:
-          new NAME                      scaffold a new project in ./NAME
+    # A usage row: an aligned command followed by its description. The padding
+    # is applied before styling so the description column lines up even when
+    # color codes are present.
+    def help_entry(name, description, width: 34)
+      "  #{Style.command(name)}#{help_gap(name, width)}#{description}"
+    end
 
-        Migration:
-          migration generate NAME       create an empty up/down migration pair
-          migration migrate             run all pending up migrations
-          migration rollback [STEP]     roll back the last STEP migrations (default 1)
-          migration status              show applied and pending migrations
+    # A usage row for an option flag.
+    def help_flag(name, description, width: 34)
+      "  #{Style.flag(name)}#{help_gap(name, width)}#{description}"
+    end
 
-        Module:
-          module new NAME [field:type ...]
-                                        scaffold a domain module
-
-        Native:
-          native generate               write a Spinel `spin` project
-          native build                  compile one native binary
-          native pack                   produce the C-only pack directory
-          native run                    boot the generated app on CRuby
-          native clean                  remove the generated directory
-
-        New options:
-          --no-test                     skip test files
-          --force                       scaffold into a non-empty directory
-
-        Module options:
-          --no-test                     skip test files
-          --no-views                    skip view templates
-          --no-migration                skip the migration pair
-          --no-routes                   skip adding routes to app.rb
-          --force                       overwrite an existing module directory
-
-        Field types: string (default), text, integer, float, boolean, date,
-                     datetime, time
-
-        Examples:
-          izen new blog
-          izen migration generate create_users
-          izen migration migrate
-          izen migration rollback 2
-          izen module new posts title:string body:text
-
-        Environment: APP_ENV=#{Database.env}
-      USAGE
+    def help_gap(name, width)
+      " " * [ width - name.length, 2 ].max
     end
   end
 end

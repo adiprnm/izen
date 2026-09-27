@@ -3,6 +3,8 @@
 require "erb"
 require "fileutils"
 
+require_relative "style"
+
 module Izen
   module Cli
     # Scaffolds a brand new Izen project: a Roda app, a database config, the
@@ -64,7 +66,7 @@ module Izen
 
       # Resolves NAME against the CLI root. "." and absolute paths are kept.
       def target_path(name)
-        abort "project name is required" if name.nil? || name.empty?
+        abort Style.error("project name is required") if name.nil? || name.empty?
 
         File.expand_path(name, Cli.root)
       end
@@ -73,14 +75,14 @@ module Izen
         path = File.join(@target, relative_path)
         FileUtils.mkdir_p(File.dirname(path))
         File.write(path, content)
-        puts "created #{File.join(@name, relative_path)}"
+        puts Style.created(File.join(@name, relative_path))
       end
 
       def ensure_target!
         return unless Dir.exist?(@target)
         return if @force || Dir.empty?(@target)
 
-        abort "#{@name} already exists and is not empty (use --force to scaffold into it)"
+        abort Style.error("#{@name} already exists and is not empty (use --force to scaffold into it)")
       end
 
       # Renders a .tt template in this generator's binding.
@@ -91,13 +93,13 @@ module Izen
 
       def summary
         puts
-        puts "Project #{@title} created in #{@name}."
+        puts "#{Style.heading("Project #{@title}")} created in #{Style.path(@name)}."
         puts
-        puts "Next steps:"
-        puts "  cd #{@name}"
-        puts "  bundle install"
-        puts "  bundle exec izen migration migrate"
-        puts "  bundle exec rackup"
+        puts Style.heading("Next steps:")
+        puts "  #{Style.step("cd #{@name}")}"
+        puts "  #{Style.step('bundle install')}"
+        puts "  #{Style.step('bundle exec izen migration migrate')}"
+        puts "  #{Style.step('bundle exec rackup')}"
       end
     end
   end

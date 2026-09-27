@@ -105,6 +105,11 @@ and editor/OS noise. Pass `--force` to scaffold into a non-empty directory or
 `izen module new` writes `app/<name>/{model,contract,repository,controller}.rb`,
 colocated tests, views, a migration and a route entry in `app.rb`.
 
+CLI output is colorized on a TTY: green for created/migrated files, yellow for
+pending migrations and skips, red for errors, cyan for paths and commands. Piped
+output stays plain; set `FORCE_COLOR=1` to keep colors when paging, or
+`NO_COLOR=1` to turn them off.
+
 ## Native binary (Spinel)
 
 `izen native` lowers the app to a [`spin`](https://github.com/matz/spinel)

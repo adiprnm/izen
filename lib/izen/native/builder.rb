@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "generator"
+require_relative "../cli/style"
 
 module Izen
   module Native
@@ -99,7 +100,7 @@ module Izen
       end
 
       def command!(*command, chdir:, env: {})
-        puts "$ (cd #{chdir} && #{command.join(' ')})"
+        puts Izen::Cli::Style.dim("$ (cd #{chdir} && #{command.join(' ')})")
         success = system(env, *command, chdir: chdir)
         # `system` returns nil (and prints nothing) when the command could not be
         # executed at all, e.g. because it is not on PATH.
