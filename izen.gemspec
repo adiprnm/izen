@@ -13,10 +13,10 @@ Gem::Specification.new do |spec|
     Izen (from "Rubizen" / Ruby Zen) provides plain-Ruby base classes — Model,
     Contract, Repository, Controller, Session, Job and Mailer — plus a
     thread-local SQLite connection, an HTTP client, an AES-256-GCM encryptor, a
-    minimal .env loader, and a CLI for migrations and module scaffolding. No ORM,
-    no autoloader, no framework magic.
+    minimal .env loader, and a CLI for project, migration and module
+    scaffolding. No ORM, no autoloader, no framework magic.
   DESC
-  spec.homepage    = "https://github.com/adipurnm/izen"
+  spec.homepage    = "https://github.com/adiprnm/izen"
   spec.license     = "MIT"
 
   spec.required_ruby_version = ">= 3.1"
@@ -28,6 +28,7 @@ Gem::Specification.new do |spec|
 
   spec.metadata["rubygems_mfa_required"] = "true"
 
+  spec.add_dependency "base64", ">= 0.2"
   spec.add_dependency "mail", "~> 2.8"
   spec.add_dependency "roda", "~> 3.0"
   spec.add_dependency "sqlite3", "~> 2.0"

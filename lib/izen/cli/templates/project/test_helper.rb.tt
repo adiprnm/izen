@@ -1,0 +1,15 @@
+# frozen_string_literal: true
+
+ENV["APP_ENV"] ||= "test"
+
+require "minitest/autorun"
+require "rack/test"
+require_relative "../app"
+
+module AppTestHelper
+  include Rack::Test::Methods
+
+  def app
+    App
+  end
+end

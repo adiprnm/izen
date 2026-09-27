@@ -1,0 +1,7 @@
+/.bundle/
+/log/
+/tmp/
+/storage/*.db
+/storage/*.db-*
+/storage/session_secret
+.env

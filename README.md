@@ -22,7 +22,7 @@ for a layer built around models and schemas.
 | `Izen::HTTP` | Small HTTP client supporting every HTTP method |
 | `Izen::Encryptor` | AES-256-GCM for secrets stored in the database |
 | `Izen::Dotenv` | Minimal `.env` loader (no dependency) |
-| `Izen::Cli` | Migrations + module scaffolding |
+| `Izen::Cli` | Project scaffolding, migrations + module scaffolding |
 
 ## Installation
 
@@ -53,6 +53,8 @@ The root is where `config/database.yaml`, `migrations/`, `storage/`, `app/`,
 ## The CLI
 
 ```sh
+izen new blog                          # scaffold a new project in ./blog
+
 izen migration generate create_users   # empty up/down migration pair
 izen migration migrate                 # run pending up migrations
 izen migration rollback [STEP]         # roll back the last STEP migrations
@@ -60,6 +62,11 @@ izen migration status                  # show applied/pending migrations
 
 izen module new posts title:string body:text   # scaffold a domain module
 ```
+
+`izen new` writes a runnable Roda + SQLite skeleton (`app.rb`, `config.ru`,
+`config/database.yaml`, `views/layout.erb`, `Rakefile`, a smoke test and the
+`app/`, `migrations/` and `storage/` directories). Pass `--force` to scaffold
+into a non-empty directory or `--no-test` to skip the test files.
 
 `izen module new` writes `app/<name>/{model,contract,repository,controller}.rb`,
 colocated tests, views, a migration and a route entry in `app.rb`.

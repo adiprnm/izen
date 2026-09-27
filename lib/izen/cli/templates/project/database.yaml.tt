@@ -1,0 +1,8 @@
+development:
+  path: storage/development.db
+
+test:
+  path: storage/test.db
+
+production:
+  path: storage/production.db

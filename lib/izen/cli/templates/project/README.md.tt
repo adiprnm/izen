@@ -1,0 +1,37 @@
+# <%= @title %>
+
+Generated with `izen new`. A lightweight [Roda](https://roda.jeremyevans.net/)
+app on top of the Izen core (SQLite, no ORM, no autoloader).
+
+## Setup
+
+```sh
+bundle install
+cp .env.example .env
+bundle exec izen migration migrate
+bundle exec rackup
+```
+
+## Layout
+
+| Path | Purpose |
+|---|---|
+| `app.rb` | Roda application (routes live here) |
+| `app/` | Domain modules (`model`, `contract`, `repository`, `controller`) |
+| `views/` | ERB templates |
+| `migrations/` | Versioned up/down SQL migrations |
+| `config/database.yaml` | SQLite path per `APP_ENV` |
+| `storage/` | SQLite databases and the session secret |
+
+## Adding a module
+
+```sh
+bundle exec izen module new posts title:string body:text
+bundle exec izen migration migrate
+```
+
+## Tests
+
+```sh
+bundle exec rake test
+```

@@ -4,9 +4,11 @@ require "fileutils"
 
 require_relative "database"
 require_relative "cli/module_generator"
+require_relative "cli/project_generator"
 
 # Command line interface. Commands are grouped by concern.
 #
+#   izen new blog
 #   izen migration migrate
 #   izen migration rollback [STEP]
 #   izen migration status
@@ -165,6 +167,8 @@ module Izen
         run_migration(action, argv)
       when "module", "modules"
         run_module(action, argv)
+      when "new", "init"
+        project_new([ action, *argv ])
       when "-h", "--help", nil
         puts usage
       else
@@ -226,9 +230,38 @@ module Izen
       scaffold(name, fields, **options)
     end
 
+    # Scaffolds a new project directory: `izen new NAME [options]`.
+    def project_new(argv)
+      first = argv.first
+      if first.nil? || %w[-h --help].include?(first)
+        puts usage
+        return
+      end
+
+      options = {}
+      name    = nil
+
+      argv.each do |arg|
+        case arg
+        when "--force"   then options[:force] = true
+        when "--no-test" then options[:tests] = false
+        when /\A--/      then abort "unknown option: #{arg}"
+        else
+          abort "unexpected argument: #{arg}" if name
+
+          name = arg
+        end
+      end
+
+      ProjectGenerator.new(name, **options).call
+    end
+
     def usage
       <<~USAGE
         Usage: izen <group> <command> [args]
+
+        New project:
+          new NAME                      scaffold a new project in ./NAME
 
         Migration:
           migration generate NAME       create an empty up/down migration pair
@@ -239,6 +272,10 @@ module Izen
         Module:
           module new NAME [field:type ...]
                                         scaffold a domain module
+
+        New options:
+          --no-test                     skip test files
+          --force                       scaffold into a non-empty directory
 
         Module options:
           --no-test                     skip test files
@@ -251,6 +288,7 @@ module Izen
                      datetime, time
 
         Examples:
+          izen new blog
           izen migration generate create_users
           izen migration migrate
           izen migration rollback 2

@@ -1,0 +1,37 @@
+# frozen_string_literal: true
+
+require "izen"
+require "roda"
+
+# Resolve config/database.yaml, migrations/, app/ and views/ against this file's
+# directory instead of the process working directory.
+Izen.configure do |config|
+  config.root = File.expand_path(__dir__)
+end
+
+Izen::Dotenv.load
+
+# Modules scaffolded by `izen module new` reference Base::Model & friends.
+Base = Izen::Base unless defined?(Base)
+
+# Izen deliberately ships without an autoloader: require every module under
+# app/ explicitly (skipping colocated *_test.rb files). `izen module new NAME`
+# drops files here.
+Dir[File.join(__dir__, "app", "*", "*.rb")].sort.each do |file|
+  require file unless file.end_with?("_test.rb")
+end
+
+class App < Roda
+  plugin :render, views: File.expand_path("views", __dir__)
+  plugin :flash
+  plugin :memory_session, key: "<%= @name %>_session"
+
+  route do |r|
+    r.root do
+      "Hello from <%= @title %>."
+    end
+
+    # Generated module routes are inserted below this marker.
+    # cli:module-routes
+  end
+end

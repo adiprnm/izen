@@ -1,0 +1,14 @@
+# frozen_string_literal: true
+
+require_relative "test_helper"
+
+class AppTest < Minitest::Test
+  include AppTestHelper
+
+  def test_root_responds
+    get "/"
+
+    assert last_response.ok?
+    assert_includes last_response.body, "Hello from <%= @title %>."
+  end
+end
