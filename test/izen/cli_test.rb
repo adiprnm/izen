@@ -64,9 +64,17 @@ class CliTest < TestSupport::DatabaseTest
     assert File.file?(File.join(project, "config", "database.yaml"))
     assert File.file?(File.join(project, "views", "layout.erb"))
     assert File.file?(File.join(project, "test", "test_helper.rb"))
+    assert File.file?(File.join(project, ".gitignore"))
     assert File.directory?(File.join(project, "app"))
     assert File.directory?(File.join(project, "migrations"))
     assert File.directory?(File.join(project, "storage"))
+
+    gitignore = File.read(File.join(project, ".gitignore"))
+    assert_includes gitignore, "/storage/*.db"
+    assert_includes gitignore, "/storage/session_secret"
+    assert_includes gitignore, ".env"
+    assert_includes gitignore, "!.env.example"
+    assert_includes gitignore, "/native/"
 
     app = File.read(File.join(project, "app.rb"))
     assert_includes app, "class App < Izen::Application"

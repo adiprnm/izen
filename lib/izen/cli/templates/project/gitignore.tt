@@ -1,10 +1,28 @@
+# Bundler / gems
 /.bundle/
+/vendor/bundle/
+
+# Local environment (keep .env.example committed)
+.env
+.env.*
+!.env.example
+
+# Logs, temp files and test coverage
 /log/
 /tmp/
+/coverage/
+
+# SQLite databases and the session secret
 /storage/*.db
 /storage/*.db-*
+/storage/*.sqlite3
+/storage/*.sqlite3-*
 /storage/session_secret
-.env
 
 # Spinel native build output (`izen native ...`)
 /native/
+
+# Editor and OS noise
+.DS_Store
+*.swp
+.ruby-lsp/
