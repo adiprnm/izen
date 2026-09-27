@@ -29,7 +29,9 @@ Gem::Specification.new do |spec|
   spec.metadata["rubygems_mfa_required"] = "true"
 
   spec.add_dependency "base64", ">= 0.2"
+  spec.add_dependency "erubi", "~> 1.12"
   spec.add_dependency "mail", "~> 2.8"
+  spec.add_dependency "prism", "~> 1.0"
   spec.add_dependency "roda", "~> 3.0"
   spec.add_dependency "sqlite3", "~> 2.0"
   spec.add_dependency "tilt", "~> 2.4"

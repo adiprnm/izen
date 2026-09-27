@@ -5,3 +5,6 @@
 /storage/*.db-*
 /storage/session_secret
 .env
+
+# Spinel native build output (`izen native ...`)
+/native/

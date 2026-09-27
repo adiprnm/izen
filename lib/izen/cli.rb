@@ -167,6 +167,8 @@ module Izen
         run_migration(action, argv)
       when "module", "modules"
         run_module(action, argv)
+      when "native", "spinel", "build"
+        run_native(action, argv)
       when "new", "init"
         project_new([ action, *argv ])
       when "-h", "--help", nil
@@ -204,6 +206,138 @@ module Izen
       else
         abort "unknown module command: #{action} (run with --help)"
       end
+    end
+
+    # Handles `native <command> [args]` — lowering the app to a Spinel `spin`
+    # project and building the native binary.
+    def run_native(action, argv)
+      require_native!
+
+      case action
+      when "generate", "g"
+        native_generate(argv)
+      when "build"
+        native_build(argv)
+      when "pack"
+        native_pack(argv)
+      when "run", "serve"
+        native_run(argv)
+      when "clean"
+        native_clean(argv)
+      when nil, "-h", "--help"
+        puts native_usage
+      else
+        abort "unknown native command: #{action} (run with --help)"
+      end
+    end
+
+    def require_native!
+      require "izen/native"
+    rescue LoadError => error
+      abort "native build needs the prism and erubi gems (#{error.message}).\n" \
+            "Add them to your Gemfile: gem \"prism\"; gem \"erubi\""
+    end
+
+    # Parses the options shared by the native commands.
+    def native_options(argv)
+      options = {
+        source: root,
+        out:    File.join(root, "native"),
+        spinel: false
+      }
+
+      until argv.empty?
+        case (arg                                     = argv.shift)
+        when "--source"     then options[:source]     = argv.shift
+        when "--out"        then options[:out]        = argv.shift
+        when "--name"       then options[:name]       = argv.shift
+        when "--spinel-bin" then options[:spinel_bin] = argv.shift
+        when "--port"       then options[:port]       = argv.shift
+        when "--pack-out"   then options[:pack_out]   = argv.shift
+        when "--spinel"     then options[:spinel]     = true
+        when "-h", "--help" then puts native_usage; exit 0
+        when /\A--/         then abort "unknown option: #{arg}"
+        else abort "unexpected argument: #{arg}"
+        end
+      end
+
+      options[:spinel_bin] ||= ENV["SPINEL_BIN"]
+      options
+    end
+
+    def native_generate(argv)
+      options = native_options(argv)
+      path    = builder(options).generate(spinel: options[:spinel])
+      puts "generated #{relative(path)}"
+    end
+
+    def native_build(argv)
+      options = native_options(argv)
+      binary  = builder(options).build
+      puts "built #{relative(binary)}"
+    rescue Native::SpinNotFound => error
+      abort error.message
+    end
+
+    def native_pack(argv)
+      options = native_options(argv)
+      path    = builder(options).pack(pack_out: options[:pack_out] || "pack")
+      puts "packed #{relative(path)}"
+    rescue Native::SpinNotFound => error
+      abort error.message
+    end
+
+    def native_run(argv)
+      options = native_options(argv)
+      builder(options).run(port: options[:port])
+    end
+
+    def native_clean(argv)
+      options = native_options(argv)
+      builder(options).clean
+      puts "removed #{relative(options[:out])}"
+    end
+
+    def builder(options)
+      Native::Builder.new(
+        source:     options[:source],
+        out:        options[:out],
+        spinel_bin: options[:spinel_bin],
+        name:       options[:name]
+      )
+    end
+
+    def native_usage
+      <<~USAGE
+        Usage: izen native <command> [options]
+
+        Lower this Izen app to a Spinel `spin` project and build one native
+        binary (no interpreter, no Rack, no Puma).
+
+        Commands:
+          native generate               write the spin project (CRuby target)
+          native build                  generate --spinel and run `spin build`
+          native pack                   generate --spinel and run `spin pack`
+          native run                    generate (CRuby) and boot bin/serve.rb
+          native clean                  remove the generated directory
+
+        Options:
+          --source PATH                 app root (default: #{root})
+          --out PATH                    output directory (default: native/)
+          --name NAME                   binary/package name (default: app dir name)
+          --spinel-bin PATH             directory holding the `spin` executable
+          --spinel                      target the Spinel build (FFI sqlite)
+          --port PORT                   port for `native run`
+          --pack-out PATH               pack directory for `native pack`
+
+        Environment:
+          SPINEL_BIN                    same as --spinel-bin
+
+        Examples:
+          izen native generate --spinel
+          izen native build --spinel-bin ~/tools/spinel/bin
+          izen native run --port 3000
+      USAGE
     end
 
     # Parses `module new NAME [field:type ...] [options]`.
@@ -272,6 +406,13 @@ module Izen
         Module:
           module new NAME [field:type ...]
                                         scaffold a domain module
+
+        Native:
+          native generate               write a Spinel `spin` project
+          native build                  compile one native binary
+          native pack                   produce the C-only pack directory
+          native run                    boot the generated app on CRuby
+          native clean                  remove the generated directory
 
         New options:
           --no-test                     skip test files

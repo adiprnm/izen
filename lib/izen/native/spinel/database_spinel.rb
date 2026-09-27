@@ -1,0 +1,49 @@
+# frozen_string_literal: true
+
+# Spinel build variant of runtime/database.rb.
+#
+# Spinel cannot load a C-extension gem, so it links libsqlite3 directly through
+# the FFI adapter in sqlite_ffi.rb (backed by sqlite_shim.c). The generator
+# points app.rb at this file when building for Spinel.
+require_relative "sqlite_ffi"
+require_relative "../generated/database_config"
+require "monitor"
+
+module Database
+  CONNECTION_MUTEX = Monitor.new
+
+  class << self
+    def env
+      ENV.fetch("APP_ENV", "development")
+    end
+
+    def path
+      DatabaseConfig::PATHS.fetch(env, DatabaseConfig::DEFAULT_PATH)
+    end
+
+    def connection
+      CONNECTION_MUTEX.synchronize { @connection ||= connect }
+    end
+
+    def connect
+      directory = File.dirname(path)
+      Dir.mkdir(directory) unless File.directory?(directory)
+      adapter   = SqliteAdapter.new(path)
+      adapter.execute("PRAGMA busy_timeout = 5000")
+      adapter.execute("PRAGMA journal_mode = WAL")
+      adapter.execute("PRAGMA foreign_keys = ON")
+      adapter
+    end
+
+    def migrate!
+      directory = File.dirname(path)
+      Dir.mkdir(directory) unless File.directory?(directory)
+      connection.execute_batch(File.read("db/schema.sql"))
+    end
+
+    def disconnect
+      @connection&.close
+      @connection = nil
+    end
+  end
+end

@@ -8,4 +8,21 @@ Rake::TestTask.new(:test) do |t|
   t.warning    = false
 end
 
+namespace :native do
+  desc "Lower this app to a Spinel project (native/)"
+  task :generate do
+    sh "bundle exec izen native generate --spinel"
+  end
+
+  desc "Build one native binary with Spinel"
+  task :build do
+    sh "bundle exec izen native build"
+  end
+
+  desc "Run the generated app on CRuby (development)"
+  task :run do
+    sh "bundle exec izen native run"
+  end
+end
+
 task default: :test
