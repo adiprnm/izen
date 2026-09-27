@@ -12,6 +12,10 @@ class ApplicationTest < Minitest::Test
         session["seen"] = true
         "signed in"
       end
+
+      r.put("widgets")    { "put" }
+      r.patch("widgets")  { "patch" }
+      r.delete("widgets") { "delete" }
     end
   end
 
@@ -47,5 +51,35 @@ class ApplicationTest < Minitest::Test
 
     assert last_response.ok?
     assert_includes last_response.headers["Set-Cookie"].to_s, "app_session"
+  end
+
+  def test_enables_the_all_verbs_matchers
+    assert App::RodaRequest.method_defined?(:put)
+    assert App::RodaRequest.method_defined?(:patch)
+    assert App::RodaRequest.method_defined?(:delete)
+  end
+
+  def test_serves_real_put_patch_and_delete_requests
+    put "/widgets"
+    assert last_response.ok?
+    assert_equal "put", last_response.body
+
+    patch "/widgets"
+    assert last_response.ok?
+    assert_equal "patch", last_response.body
+
+    delete "/widgets"
+    assert last_response.ok?
+    assert_equal "delete", last_response.body
+  end
+
+  def test_honors_method_override_from_a_post_form
+    post "/widgets", { "_method" => "put" }
+    assert last_response.ok?
+    assert_equal "put", last_response.body
+
+    post "/widgets", { "_method" => "delete" }
+    assert last_response.ok?
+    assert_equal "delete", last_response.body
   end
 end

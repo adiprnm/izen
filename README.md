@@ -15,7 +15,7 @@ for a layer built around models and schemas.
 | `Izen::Base::Contract` | Dependency-free params validation (lean `dry-validation`) |
 | `Izen::Base::Repository` | Thin wrapper over the SQLite connection, raw SQL |
 | `Izen::Base::Controller` | Roda-backed controller base (render, flash, request context) |
-| `Izen::Application` | Base Roda app: render, flash and signed-cookie sessions, rooted at `Izen.root` |
+| `Izen::Application` | Base Roda app: render, flash, signed-cookie sessions and PUT/PATCH/DELETE (with method override), rooted at `Izen.root` |
 | `Izen::Base::Session` | Signed-cookie sessions without OpenSSL |
 | `Izen::Base::Job` | Single-thread background job base class + worker |
 | `Izen::Base::Mailer` | Transactional mailer base class |
@@ -67,6 +67,17 @@ end
 It enables `:render` (views under `Izen.root/views`), `:flash` and the
 signed-cookie `:memory_session` plugin, deriving the session cookie name from
 the subclass name (`App` → `app_session`).
+
+It also enables `:all_verbs` so routes can match `r.put`, `r.patch` and
+`r.delete`, and installs `Rack::MethodOverride` so a form — which can only
+`POST` — can reach them:
+
+```erb
+<form method="post" action="/widgets/1">
+  <input type="hidden" name="_method" value="delete">
+  <button>Delete</button>
+</form>
+```
 
 ## The CLI
 

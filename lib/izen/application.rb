@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "roda"
+require "rack/method_override"
 
 require_relative "base/session_plugin"
 
@@ -21,15 +22,22 @@ module Izen
   # Plugins are configured in .inherited rather than in this class body so the
   # views directory (Izen.root/views) is resolved *after* the host app calls
   # Izen.configure, not when the gem is first required.
+  #
+  # :all_verbs adds the r.put / r.delete / r.patch matchers (Roda only ships
+  # r.get and r.post), and Rack::MethodOverride lets an HTML form — which can
+  # only POST — reach them with a hidden `_method` field (or the
+  # X-HTTP-Method-Override header).
   class Application < Roda
     class << self
       def inherited(subclass)
         super
 
         subclass.opts[:root] = Izen.root
+        subclass.plugin :all_verbs
         subclass.plugin :render, views: "views"
         subclass.plugin :flash
         subclass.plugin :memory_session, key: "#{session_key(subclass)}_session"
+        subclass.use Rack::MethodOverride
       end
 
       private
