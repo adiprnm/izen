@@ -39,4 +39,6 @@ require "izen/base/session_plugin"
 require "izen/base/job"
 require "izen/base/mailer"
 
+require "izen/application"
+
 require "izen/cli"

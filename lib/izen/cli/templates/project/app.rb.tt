@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "izen"
-require "roda"
 
 # Resolve config/database.yaml, migrations/, app/ and views/ against this file's
 # directory instead of the process working directory.
@@ -21,11 +20,8 @@ Dir[File.join(__dir__, "app", "*", "*.rb")].sort.each do |file|
   require file unless file.end_with?("_test.rb")
 end
 
-class App < Roda
-  plugin :render, views: File.expand_path("views", __dir__)
-  plugin :flash
-  plugin :memory_session, key: "<%= @name %>_session"
-
+# Rendering, flash and sessions are wired up by Izen::Application.
+class App < Izen::Application
   route do |r|
     r.root do
       "Hello from <%= @title %>."

@@ -69,7 +69,7 @@ class CliTest < TestSupport::DatabaseTest
     assert File.directory?(File.join(project, "storage"))
 
     app = File.read(File.join(project, "app.rb"))
-    assert_includes app, "class App < Roda"
+    assert_includes app, "class App < Izen::Application"
     assert_includes app, "# cli:module-routes"
     assert_includes app, "Izen.configure"
   ensure
@@ -116,7 +116,7 @@ class CliTest < TestSupport::DatabaseTest
 
     quiet { Izen::Cli.project_new([ "blog", "--force" ]) }
 
-    assert_includes File.read(File.join(dir, "blog", "app.rb")), "class App < Roda"
+    assert_includes File.read(File.join(dir, "blog", "app.rb")), "class App < Izen::Application"
   ensure
     Izen.root = previous
     FileUtils.remove_entry(dir)

@@ -32,4 +32,5 @@ Gem::Specification.new do |spec|
   spec.add_dependency "mail", "~> 2.8"
   spec.add_dependency "roda", "~> 3.0"
   spec.add_dependency "sqlite3", "~> 2.0"
+  spec.add_dependency "tilt", "~> 2.4"
 end

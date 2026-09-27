@@ -15,6 +15,7 @@ for a layer built around models and schemas.
 | `Izen::Base::Contract` | Dependency-free params validation (lean `dry-validation`) |
 | `Izen::Base::Repository` | Thin wrapper over the SQLite connection, raw SQL |
 | `Izen::Base::Controller` | Roda-backed controller base (render, flash, request context) |
+| `Izen::Application` | Base Roda app: render, flash and signed-cookie sessions, rooted at `Izen.root` |
 | `Izen::Base::Session` | Signed-cookie sessions without OpenSSL |
 | `Izen::Base::Job` | Single-thread background job base class + worker |
 | `Izen::Base::Mailer` | Transactional mailer base class |
@@ -49,6 +50,23 @@ end
 
 The root is where `config/database.yaml`, `migrations/`, `storage/`, `app/`,
 `views/` and `.env` live.
+
+## The application class
+
+`Izen::Application` is a Roda subclass that wires up the pieces every app
+needs. Subclass it and declare your routes:
+
+```ruby
+class App < Izen::Application
+  route do |r|
+    r.root { view("home") }
+  end
+end
+```
+
+It enables `:render` (views under `Izen.root/views`), `:flash` and the
+signed-cookie `:memory_session` plugin, deriving the session cookie name from
+the subclass name (`App` → `app_session`).
 
 ## The CLI
 
