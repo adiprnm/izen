@@ -17,7 +17,7 @@ module Base
 
     def render(template, locals = {}, layout: nil, **kwargs)
       locals = locals.merge(kwargs)
-      app.view(template, locals: locals)
+      app.view(template, locals: locals, layout: layout)
     end
 
     def session = app.session

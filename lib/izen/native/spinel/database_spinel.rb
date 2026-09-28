@@ -13,6 +13,12 @@ module Database
   CONNECTION_MUTEX = Monitor.new
 
   class << self
+    # The app root. The native binary runs with the app as its working
+    # directory, so a relative path is the root (`Izen::Database.root`).
+    def root
+      "."
+    end
+
     def env
       ENV.fetch("APP_ENV", "development")
     end

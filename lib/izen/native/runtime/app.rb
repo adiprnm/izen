@@ -20,6 +20,8 @@ require_relative "runtime/static_file"
 require_relative "runtime/flash"
 require_relative "runtime/helpers"
 require_relative "runtime/dotenv"
+require_relative "runtime/compat"
+require_relative "runtime/shims"
 
 # Domain + lowered code (require order emitted by the generator into
 # generated/requires.rb).

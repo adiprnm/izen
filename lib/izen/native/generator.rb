@@ -20,8 +20,10 @@ module Izen
       # `require`s that cannot be satisfied under Spinel (or are supplied by
       # the generated runtime) and are dropped from copied domain files.
       DROPPED_REQUIRES = %w[
-        izen roda rack rack/method_override sqlite3 yaml securerandom date
-        fileutils digest openssl logger bcrypt vips
+        izen roda rack rack/method_override rack/auth/basic rack/mime rack/test
+        sqlite3 yaml securerandom date openssl logger bcrypt vips
+        aws-sdk-s3 nokogiri sanitize rufus-scheduler mail minitest
+        minitest/autorun time
       ].freeze
 
       attr_reader :source, :out
@@ -39,6 +41,8 @@ module Izen
         copy_runtime
         copy_spinel
         copy_domain
+        copy_support
+        copy_overrides
         copy_lib
         copy_public
         write_models
@@ -100,11 +104,55 @@ module Izen
 
       def copy_domain
         (@an.controller_files + @an.repository_files).each do |path|
-          module_name = File.basename(File.dirname(path))
-          target_dir  = File.join(@out, "app", module_name)
-          FileUtils.mkdir_p(target_dir)
-          File.write(File.join(target_dir, File.basename(path)), strip_requires(File.read(path)))
+          copy_source_file(path)
         end
+      end
+
+      # Helper modules, services and value objects under app/ that the copied
+      # controllers, repositories and views reference.
+      def copy_support
+        @an.support_files.each { |path| copy_source_file(path) }
+      end
+
+      # App-supplied Spinel-friendly replacements. `native_overrides/` in the
+      # source app mirrors the generated layout; any file there overwrites the
+      # copied/derived output at the same relative path. This keeps the CRuby
+      # app untouched while letting a file that uses unsupported constructs
+      # ship a lowered variant.
+      def copy_overrides
+        directory = File.join(@source, "native_overrides")
+        return unless File.directory?(directory)
+
+        Dir[File.join(directory, "**", "*")].each do |path|
+          next if File.directory?(path)
+
+          relative = path.sub("#{directory}/", "")
+          target   = File.join(@out, relative)
+          FileUtils.mkdir_p(File.dirname(target))
+          FileUtils.cp(path, target)
+        end
+      end
+
+      # Copies one source file, preserving its path relative to the app root
+      # (so nested modules such as admin/posts/controller.rb keep their place).
+      def copy_source_file(path)
+        relative = path.sub("#{@source}/", "")
+        target   = File.join(@out, relative)
+        FileUtils.mkdir_p(File.dirname(target))
+        File.write(target, rewrite_constants(strip_requires(File.read(path))))
+      end
+
+      # Spinel resolves a qualified constant by its LEAF. `Izen::Base::X`
+      # (whose `Izen::Base` alias points at `Base`) therefore collides with any
+      # other class sharing that leaf and can bind to the wrong superclass; the
+      # lowered runtime declares the base classes as `Base::X`, so rewrite the
+      # namespace to match before the compiler sees it.
+      def rewrite_constants(source)
+        source
+          .gsub("Izen::Base::", "Base::")
+          .gsub("Izen::Database", "Database")
+          .gsub("Izen::Encryptor", "Encryptor")
+          .gsub("Izen::HTTP", "HTTP")
       end
 
       def copy_lib
@@ -112,7 +160,7 @@ module Izen
           relative = path.sub("#{@source}/", "")
           target   = File.join(@out, relative)
           FileUtils.mkdir_p(File.dirname(target))
-          File.write(target, strip_requires(File.read(path)))
+          File.write(target, rewrite_constants(strip_requires(File.read(path))))
         end
       end
 
@@ -229,12 +277,12 @@ module Izen
       # app helpers are also exposed explicitly on Base::Controller (the
       # copied controllers call them as if they were their own methods).
       def write_controller_helpers
-        names = @an.app_helper_methods
-        out   = +"# frozen_string_literal: true\n\n"
+        methods = @an.app_helper_methods
+        out     = +"# frozen_string_literal: true\n\n"
         out << "module Base\n  class Controller\n"
-        names.each do |name|
-          out << "    def #{name}(*args, &block)\n"
-          out << "      app.#{name}(*args, &block)\n"
+        methods.each do |method|
+          out << "    def #{method[:name]}(#{method[:params]})\n"
+          out << "      app.#{method[:name]}(#{method[:forward]})\n"
           out << "    end\n"
         end
         out << "  end\nend\n"
@@ -269,7 +317,7 @@ module Izen
       # ships only a layout (no module views yet) gets an empty inner body
       # instead. Likewise, only wrap in the layout when one exists.
       def render_view_method(views, layout:)
-        out = +"  def view(template, locals: {})\n"
+        out = +"  def view(template, locals: {}, layout: nil)\n"
         if views.empty?
           out << "    inner = \"\"\n"
         else
@@ -282,6 +330,7 @@ module Izen
           out << "      else \"\"\n"
           out << "      end\n"
         end
+        out << "    return inner if layout == false\n"
         out << (layout ? "    layout_view(inner)\n" : "    inner\n")
         out << "  end\n"
         out
@@ -291,13 +340,18 @@ module Izen
         source = File.read(path)
         source = source.gsub("yield", replace_yield) if replace_yield
         # Match Tilt::ErubiTemplate (what Izen uses through Roda's :render
-        # plugin): no auto-escaping. `<%= %>` and `<%== %>` both emit raw HTML,
-        # so the layout's `<%= yield %>` is not escaped and templates render
-        # exactly as they do on CRuby. Templates that want escaping call `h`.
-        engine = Erubi::Engine.new(source, bufvar: "@_buf")
+        # plugin): the engine's escaping follows the app's `escape` option.
+        # With `escape: true`, `<%=` escapes through the render scope's `h` and
+        # `<%==` emits raw HTML.
+        engine = Erubi::Engine.new(source, bufvar: "@_buf", escape: @an.view_escape?, escapefunc: "h")
 
         out = +"  def #{method_name}(#{replace_yield ? "content" : "locals"})\n"
-        locals.each { |name| out << "    #{name} = locals[:#{name}]\n" }
+        # Izen's controller#render exposes locals BOTH as locals and as
+        # instance variables (so views written for either style work).
+        locals.each do |name|
+          out << "    #{name} = locals[:#{name}]\n"
+          out << "    @#{name} = #{name}\n"
+        end
         out << "    #{engine.src}\n"
         out << "  end\n"
         out
@@ -333,11 +387,21 @@ module Izen
           out << "require_relative \"../#{relative}\"\n"
         end
 
-        (@an.controller_files + @an.repository_files).sort.each do |path|
+        (@an.controller_files + @an.repository_files + @an.support_files).sort.each do |path|
           relative = path.sub("#{@source}/", "").sub(/\.rb\z/, "")
           out << "require_relative \"../#{relative}\"\n"
         end
         out << "require_relative \"repositories\"\n"
+        # App helper modules the source App `include`s are re-opened onto the
+        # generated AppHelpers (which the generated App includes); Spinel does
+        # not dispatch them through method_missing, so they must be in the
+        # ancestor chain for the controller delegators to resolve.
+        includes = @an.app_includes.reject { |name| name == "AppHelpers" }
+        unless includes.empty?
+          out << "\nmodule AppHelpers\n"
+          includes.each { |name| out << "  include #{name}\n" }
+          out << "end\n"
+        end
         out << "require_relative \"views\"\n"
         out << "require_relative \"routes\"\n"
         File.write(File.join(@out, "generated", "requires.rb"), out)

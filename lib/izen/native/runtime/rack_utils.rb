@@ -9,6 +9,12 @@ module Rack
   module Utils
     module_function
 
+    # Percent-encode everything outside the unreserved set (Rack::Utils's
+    # escape_path is used for mailto query values in the views).
+    def escape_path(value)
+      escape(value)
+    end
+
     # --- escaping ---------------------------------------------------------
 
     def escape(value)

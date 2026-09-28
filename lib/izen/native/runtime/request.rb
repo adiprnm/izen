@@ -62,8 +62,31 @@ class Request
     header("user-agent") || ""
   end
 
+  def referer
+    header("referer") || header("referrer") || ""
+  end
+
+  def scheme
+    header("x-forwarded-proto") || "http"
+  end
+
+  def host_with_port
+    header("host") || "localhost"
+  end
+
+  def url
+    query = @query_string.to_s.empty? ? "" : "?#{@query_string}"
+    "#{scheme}://#{host_with_port}#{path_info}#{query}"
+  end
+
   def header(name)
     @headers[name.to_s.downcase]
+  end
+
+  # The Roda/Rack env: the lowered request keeps headers like a Rack env, and
+  # the app's `Rack::Auth::Basic::Request.new(request.env)` path reads them.
+  def env
+    @headers
   end
 
   def cookie(name)
