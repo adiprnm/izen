@@ -121,8 +121,9 @@ POSTing a hidden `_method=put` / `_method=delete` field that `Rack::MethodOverri
 converts.
 
 `izen dev` boots the app's `config.ru` through `rackup` (Puma when the app's
-Gemfile ships it), running from the app root and preferring `bundle exec` when a
-Gemfile is present. It binds port 3000 by default; `--port`/`-p`,
+Gemfile ships it), running from the app root and preferring `bundle exec` when
+the bundle actually includes `rackup` (falling back to the standalone `rackup`
+with a warning otherwise). It binds port 3000 by default; `--port`/`-p`,
 `--host`/`-o`, `--config`/`-c` and `--env`/`-e` (the latter sets `APP_ENV`) are
 supported, with `PORT` and `HOST` from the environment as defaults.
 

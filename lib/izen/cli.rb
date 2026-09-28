@@ -417,6 +417,13 @@ module Izen
       env            = {}
       env["APP_ENV"] = options[:env] if options[:env]
 
+      if File.file?(File.join(root, "Gemfile")) && !bundled?("rackup")
+        warn Style.warning(
+          "rackup isn't in this app's bundle — running outside `bundle exec` " \
+          "(add `gem \"rackup\"` and run `bundle install` to pin it)"
+        )
+      end
+
       puts Style.dim("$ #{command.join(' ')}")
       result = system(env, *command, chdir: root)
 
@@ -451,16 +458,33 @@ module Izen
       options
     end
 
-    # Builds the `rackup` invocation, wrapping it in `bundle exec` when the app
-    # has a Gemfile. The port is always passed explicitly so the default lives
-    # here (3000) rather than in rackup (9292).
+    # Builds the `rackup` invocation, wrapping it in `bundle exec` when the
+    # app's bundle actually ships rackup. A Gemfile that omits rackup (such as
+    # the gem's own dev Gemfile) would make `bundle exec rackup` fail with an
+    # opaque Bundler error, so only bundle when rackup is resolvable there.
     def dev_command(config, options)
       command = []
-      command << "bundle" << "exec" if File.file?(File.join(root, "Gemfile"))
+      command << "bundle" << "exec" if File.file?(File.join(root, "Gemfile")) && bundled?("rackup")
       command << "rackup" << config
       command << "-p" << (options[:port] || DEFAULT_PORT).to_s
       command << "-o" << options[:host].to_s if options[:host]
       command
+    end
+
+    # Whether +name+ is provided by the app's bundle, so `bundle exec` will be
+    # able to find it. Prefers Gemfile.lock (the resolved source of truth that
+    # `bundle exec` actually uses) and falls back to the Gemfile before the
+    # first `bundle install`.
+    def bundled?(name)
+      gemfile  = File.join(root, "Gemfile")
+      return false unless File.file?(gemfile)
+
+      lockfile = File.join(root, "Gemfile.lock")
+      source   = File.read(File.file?(lockfile) ? lockfile : gemfile)
+
+      # Matches a resolved lock entry (`    rackup (2.3.1)`) or a Gemfile
+      # declaration (`gem "rackup", "~> 2.2"`).
+      source.match?(/^\s*(?:gem\s+)?["']?#{Regexp.escape(name)}["']?(?:\s*[(,]|\s*$)/)
     end
 
     def dev_usage

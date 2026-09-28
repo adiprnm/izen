@@ -147,15 +147,41 @@ class CliTest < TestSupport::DatabaseTest
     FileUtils.remove_entry(dir)
   end
 
-  def test_dev_command_prefers_bundle_exec_when_the_app_has_a_gemfile
+  def test_dev_command_prefers_bundle_exec_when_the_app_bundles_rackup
     dir       = Dir.mktmpdir("izen-dev")
     previous  = Izen.root
     Izen.root = dir
-    File.write(File.join(dir, "Gemfile"), "source 'https://rubygems.org'\n")
+    File.write(File.join(dir, "Gemfile"), "source 'https://rubygems.org'\ngem 'rackup', '~> 2.2'\n")
 
     command = Izen::Cli.dev_command("config.ru", port: "3000", host: "0.0.0.0")
 
     assert_equal %w[bundle exec rackup config.ru -p 3000 -o 0.0.0.0], command
+  ensure
+    Izen.root = previous
+    FileUtils.remove_entry(dir)
+  end
+
+  def test_dev_command_uses_the_lockfile_when_deciding_to_bundle_exec
+    dir       = Dir.mktmpdir("izen-dev")
+    previous  = Izen.root
+    Izen.root = dir
+    File.write(File.join(dir, "Gemfile"), "source 'https://rubygems.org'\n")
+    File.write(File.join(dir, "Gemfile.lock"), "GEM\n  specs:\n    rackup (2.3.1)\n")
+
+    assert_equal %w[bundle exec rackup config.ru -p 3000],
+      Izen::Cli.dev_command("config.ru", {})
+  ensure
+    Izen.root = previous
+    FileUtils.remove_entry(dir)
+  end
+
+  def test_dev_command_skips_bundle_exec_when_the_app_omits_rackup
+    dir       = Dir.mktmpdir("izen-dev")
+    previous  = Izen.root
+    Izen.root = dir
+    File.write(File.join(dir, "Gemfile"), "source 'https://rubygems.org'\ngem 'roda'\n")
+
+    assert_equal %w[rackup config.ru -p 3000], Izen::Cli.dev_command("config.ru", {})
   ensure
     Izen.root = previous
     FileUtils.remove_entry(dir)
