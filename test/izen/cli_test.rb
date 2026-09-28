@@ -89,6 +89,10 @@ class CliTest < TestSupport::DatabaseTest
     assert_includes secrets, "SESSION_SECRET=$SESSION_SECRET"
     assert_includes secrets, "APP_ENCRYPTION_KEY=$APP_ENCRYPTION_KEY"
 
+    readme = File.read(File.join(project, "README.md"))
+    assert_includes readme, "## Deploy (Kamal)"
+    assert_includes readme, "blog_storage"
+
     app = File.read(File.join(project, "app.rb"))
     assert_includes app, "class App < Izen::Application"
     assert_includes app, "# cli:module-routes"
