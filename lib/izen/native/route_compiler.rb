@@ -71,22 +71,18 @@ module Izen
         [ "#{rewrite(slice(node), env)}\n", env ]
       end
 
-      def emit_leaf(call, offset, env)
-        method = call.name.to_s.upcase
-        args   = call.arguments&.arguments || []
-        path   = args[0]
+      ROUTING_METHODS = %i[get post put patch delete options head on is root].freeze
 
-        conds = []
-        if path.is_a?(Prism::StringNode) || path.is_a?(Prism::SymbolNode)
-          conds << "r.segments.length == #{offset + 1}"
-          conds << "r.segments[#{offset}] == #{Node.literal(path).inspect}"
-        else
-          conds << "r.segments.length == #{offset}"
-        end
+      def emit_leaf(call, offset, env)
+        method   = call.name.to_s.upcase
+        matchers = call.arguments&.arguments || []
+        conds    = match_conditions(matchers, offset, terminal: true)
         conds << "r.request_method == #{method.inspect}"
+        assigns  = capture_assignments(matchers, param_names(call), offset)
 
         body   = call.block&.body
         source = body ? rewrite(slice(body), env) : "nil"
+        source = "#{assigns.join("\n")}\n#{source}" unless assigns.empty?
 
         <<~RUBY
           if #{conds.join(' && ')}
@@ -98,37 +94,52 @@ module Izen
       end
 
       def emit_on(call, offset, env)
-        segment = (call.arguments&.arguments || [])[0]
-        body    = call.block&.body
-        inner   = body ? emit_statements(body.body, offset + 1, env.dup) : ""
-
-        if segment.is_a?(Prism::ConstantReadNode) && segment.name == :Integer
-          param = block_param(call)
-          cond  = "r.segments.length > #{offset} && r.segments[#{offset}].match?(/\\A\\d+\\z/)"
-          <<~RUBY
-            if #{cond}
-              #{param} = r.segments[#{offset}].to_i
-            #{indent(inner, 2)}
-            end
-          RUBY
-        else
-          cond = "r.segments.length > #{offset} && r.segments[#{offset}] == #{Node.literal(segment).inspect}"
-          <<~RUBY
-            if #{cond}
-            #{indent(inner, 2)}
-            end
-          RUBY
-        end
+        emit_scope(call, offset, env, terminal: false)
       end
 
       def emit_is(call, offset, env)
-        body  = call.block&.body
-        inner = body ? emit_statements(body.body, offset, env.dup) : ""
+        emit_scope(call, offset, env, terminal: true)
+      end
+
+      # Shared by `r.on` (prefix match) and `r.is` (terminal match). A scope
+      # whose block is a plain expression must return it, or the dispatcher
+      # would drop the response body; scopes that contain nested route calls
+      # return through those leaves instead.
+      def emit_scope(call, offset, env, terminal:)
+        matchers = call.arguments&.arguments || []
+        inner_at = offset + matchers.length
+        body     = call.block&.body
+        assigns  = capture_assignments(matchers, param_names(call), offset)
+        conds    = match_conditions(matchers, offset, terminal: terminal)
+
+        inner   = if body && !routing_body?(body)
+          "return (begin\n#{indent(rewrite(slice(body), env), 2)}\nend)"
+        elsif body
+          emit_statements(body.body, inner_at, env.dup)
+        else
+          ""
+        end
+        content = assigns.empty? ? inner : "#{assigns.join("\n")}\n#{inner}"
+
         <<~RUBY
-          if r.segments.length == #{offset}
-          #{indent(inner, 2)}
+          if #{conds.join(' && ')}
+          #{indent(content, 2)}
           end
         RUBY
+      end
+
+      # True when +body+ contains a nested route call (`r.on`, `r.is`, ...).
+      def routing_body?(body)
+        found = false
+        Node.walk(body) do |node|
+          next unless node.is_a?(Prism::CallNode)
+
+          receiver = node.receiver
+          next unless receiver.is_a?(Prism::LocalVariableReadNode) && receiver.name == :r
+
+          found = true if ROUTING_METHODS.include?(node.name)
+        end
+        found
       end
 
       def emit_root(call, offset, env)
@@ -143,12 +154,57 @@ module Izen
         RUBY
       end
 
-      def block_param(call)
-        parameters = call.block&.parameters
-        return "id" unless parameters
+      # Conditions that must hold for `matchers` to match at `offset`.
+      # Terminal matchers (`r.is`, `r.get`, ...) must consume the rest of the
+      # path; `r.on` only matches a prefix.
+      def match_conditions(matchers, offset, terminal:)
+        conds = []
+        if terminal
+          conds << "r.segments.length == #{offset + matchers.length}"
+        elsif !matchers.empty?
+          conds << "r.segments.length > #{offset + matchers.length - 1}"
+        end
 
-        node = parameters.parameters&.requireds&.first
-        node ? node.name.to_s : "id"
+        matchers.each_with_index do |matcher, index|
+          position = offset + index
+          case matcher
+          when Prism::StringNode, Prism::SymbolNode
+            conds << "r.segments[#{position}] == #{Node.literal(matcher).inspect}"
+          when Prism::ConstantReadNode
+            conds << "r.segments[#{position}].match?(/\\A\\d+\\z/)" if matcher.name == :Integer
+          end
+        end
+        conds
+      end
+
+      # Assignments that bind the block params to the segments captured by
+      # `String`/`Integer` matchers, in order. Roda does not yield literal
+      # matches, so only the non-literal matchers consume params.
+      def capture_assignments(matchers, params, offset)
+        assignments = []
+        index       = 0
+
+        matchers.each_with_index do |matcher, position|
+          next unless matcher.is_a?(Prism::ConstantReadNode)
+
+          name   = params[index]
+          index += 1
+          next unless name
+
+          source = case matcher.name
+          when :String  then "r.segments[#{offset + position}]"
+          when :Integer then "r.segments[#{offset + position}].to_i"
+          end
+          assignments << "#{name} = #{source}" if source
+        end
+        assignments
+      end
+
+      def param_names(call)
+        parameters = call.block&.parameters
+        return [] unless parameters
+
+        (parameters.parameters&.requireds || []).map { |node| node.name.to_s }
       end
 
       def indent(text, spaces)

@@ -166,6 +166,46 @@ class NativeTest < Minitest::Test
     end
   end
 
+  def test_compiles_string_and_multi_segment_route_params
+    Dir.mktmpdir("izen-native") do |dir|
+      source = scaffold_project(dir, with_module: false)
+      app_rb = File.join(source, "app.rb")
+      routes = <<~RUBY
+        r.on "pages" do
+          r.is String do |slug|
+            "page:\#{slug}"
+          end
+        end
+        r.get("download", String) do |token|
+          "token:\#{token}"
+        end
+      RUBY
+      File.write(app_rb, File.read(app_rb).sub("    # cli:module-routes\n", routes))
+      out    = File.join(dir, "native")
+
+      Izen::Native::Generator.new(source, out).run
+
+      driver = <<~'RUBY'
+        ENV["APP_ENV"] = "test"
+        root = ARGV[0]
+        Dir.chdir(root)
+        require File.join(root, "app.rb")
+        Database.migrate!
+
+        page  = App.new.call(Request.new("GET", "/pages/hello", "", "", {})).body
+        token = App.new.call(Request.new("GET", "/download/abc123", "", "", {})).body
+        puts(page.include?("page:hello") ? "ok page" : "FAIL page: #{page.inspect}")
+        puts(token.include?("token:abc123") ? "ok token" : "FAIL token: #{token.inspect}")
+        puts "ALL OK"
+      RUBY
+
+      output = run_driver(out, driver)
+      assert_includes output, "ok page", "driver output:\n#{output}"
+      assert_includes output, "ok token", "driver output:\n#{output}"
+      assert_includes output, "ALL OK", "driver output:\n#{output}"
+    end
+  end
+
   def test_builder_reports_a_missing_spin_executable
     Dir.mktmpdir("izen-native") do |dir|
       source  = scaffold_project(dir)
