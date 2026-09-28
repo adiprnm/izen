@@ -216,6 +216,15 @@ class NativeTest < Minitest::Test
     end
   end
 
+  def test_request_parses_multipart_form_data
+    request = File.expand_path("../../lib/izen/native/runtime/request.rb", __dir__)
+    driver  = File.join(Dir.mktmpdir("izen-multipart"), "driver.rb")
+    File.write(driver, MULTIPART_DRIVER.sub("REQUEST_PATH", request))
+
+    output = IO.popen([ RbConfig.ruby, driver ], err: [ :child, :out ], &:read)
+    assert_includes output, "ALL OK", "driver output:\n#{output}"
+  end
+
   def test_render_locals_follow_hash_variables_and_helper_returns
     Dir.mktmpdir("izen-locals") do |dir|
       FileUtils.mkdir_p(File.join(dir, "app", "admin", "dashboard"))
@@ -269,6 +278,58 @@ class NativeTest < Minitest::Test
   end
 
   private
+
+  # Exercises the runtime Request directly: a multipart form must expose
+  # `_csrf`, honour `_method` and keep file parts (the settings-save bug).
+  MULTIPART_DRIVER = <<~'RUBY'
+    require "REQUEST_PATH"
+
+    boundary = "----TestBoundary123"
+    body = [
+      "--#{boundary}",
+      'Content-Disposition: form-data; name="_csrf"',
+      "",
+      "tok123",
+      "--#{boundary}",
+      'Content-Disposition: form-data; name="_method"',
+      "",
+      "patch",
+      "--#{boundary}",
+      'Content-Disposition: form-data; name="channels[]"',
+      "",
+      "qris",
+      "--#{boundary}",
+      'Content-Disposition: form-data; name="channels[]"',
+      "",
+      "va",
+      "--#{boundary}",
+      'Content-Disposition: form-data; name="site_favicon"; filename="logo.png"',
+      "Content-Type: image/png",
+      "",
+      "PNGDATA",
+      "--#{boundary}--",
+      ""
+    ].join("\r\n")
+
+    headers = { "content-type" => "multipart/form-data; boundary=#{boundary}" }
+    req     = Request.new("POST", "/admin/settings", "", body, headers)
+    params  = req.params
+    file    = params["site_favicon"]
+
+    def check(label, condition)
+      puts "#{condition ? 'ok' : 'FAIL'} #{label}"
+      exit 1 unless condition
+    end
+
+    check "csrf",        params["_csrf"] == "tok123"
+    check "method param", params["_method"] == "patch"
+    check "method swap",  req.request_method == "PATCH"
+    check "array",        params["channels"] == %w[qris va]
+    check "filename",     file.is_a?(Hash) && file[:filename] == "logo.png"
+    check "type",         file.is_a?(Hash) && file[:type] == "image/png"
+    check "content",      file.is_a?(Hash) && file[:tempfile].read == "PNGDATA"
+    puts "ALL OK"
+  RUBY
 
   # Builds a minimal Izen app with `izen new` (+ a module unless disabled).
   def scaffold_project(dir, with_module: true)

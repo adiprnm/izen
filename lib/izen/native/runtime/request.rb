@@ -114,7 +114,9 @@ class Request
   def params
     @params ||= begin
       merged = Rack::Utils.parse_nested_query(@query_string)
-      if form_body?
+      if multipart_body?
+        merge_multipart(merged)
+      elsif form_body?
         Rack::Utils.parse_nested_query(@raw_body).each { |key, value| merged[key] = value }
       end
       if merged["_method"] && @request_method == "POST"
@@ -140,5 +142,59 @@ class Request
   def form_body?
     type = media_type
     type.empty? || type == "application/x-www-form-urlencoded"
+  end
+
+  def multipart_body?
+    media_type == "multipart/form-data"
+  end
+
+  # Parses a `multipart/form-data` body into `params`, Rack-style: text fields
+  # become Strings and file fields become a Hash with :filename, :type, :name,
+  # :tempfile (a StringIO) and :head. Field names go through the same nested
+  # parser as a query string, so `foo[]`/`foo[bar]` names work. Without this,
+  # multipart forms (file uploads) lost `_csrf`/`_method`, so every save was
+  # rejected by an app's CSRF check.
+  def merge_multipart(merged)
+    delimiter = boundary
+    return if delimiter.nil? || delimiter.empty?
+
+    @raw_body.split("--#{delimiter}").each do |part|
+      next if part.empty? || part.start_with?("--")
+
+      part  = part[2, part.length].to_s if part.start_with?("\r\n")
+      split = part.index("\r\n\r\n")
+      next if split.nil?
+
+      raw_headers = part[0, split]
+      content     = part[(split + 4), part.length].to_s
+      content     = content[0, content.length - 2] if content.end_with?("\r\n")
+
+      name = raw_headers[/name="([^"]*)"/, 1]
+      next if name.nil? || name.empty?
+
+      Rack::Utils.normalize(merged, name, multipart_value(raw_headers, name, content), 0)
+    end
+  end
+
+  def multipart_value(raw_headers, name, content)
+    filename = raw_headers[/filename="([^"]*)"/, 1]
+    return content unless filename
+
+    {
+      filename: filename,
+      type:     raw_headers[/content-type:\s*([^\r\n]+)/i, 1].to_s.strip,
+      name:     name,
+      tempfile: StringIO.new(content),
+      head:     raw_headers
+    }
+  end
+
+  def boundary
+    match = header("content-type").to_s.match(/boundary=(.+)/)
+    return nil unless match
+
+    value = match[1].strip
+    value = value[1, value.length - 2] if value.start_with?('"') && value.end_with?('"') && value.length >= 2
+    value
   end
 end
