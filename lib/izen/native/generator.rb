@@ -5,6 +5,7 @@ require "erubi"
 require "yaml"
 require_relative "analyzer"
 require_relative "route_compiler"
+require_relative "../cli/kamal"
 
 module Izen
   module Native
@@ -257,20 +258,32 @@ module Izen
         out << compile_view(layout, "layout_view", [], "content") if layout
         out << "\n"
 
-        out << "  def view(template, locals: {})\n"
-        out << "    inner =\n"
-        out << "      case template\n"
-        views.each do |path|
-          template = template_name(path)
-          out << "      when #{template.inspect} then view_#{template.tr('/', '_')}(locals)\n"
-        end
-        out << "      else \"\"\n"
-        out << "      end\n"
-        out << "    layout_view(inner)\n"
-        out << "  end\n"
+        out << render_view_method(views, layout: !layout.nil?)
 
         out << "end\n"
         File.write(File.join(@out, "generated", "views.rb"), out)
+      end
+
+      # Spinel's parser rejects a `case` with no `when` branch, so an app that
+      # ships only a layout (no module views yet) gets an empty inner body
+      # instead. Likewise, only wrap in the layout when one exists.
+      def render_view_method(views, layout:)
+        out = +"  def view(template, locals: {})\n"
+        if views.empty?
+          out << "    inner = \"\"\n"
+        else
+          out << "    inner =\n"
+          out << "      case template\n"
+          views.each do |path|
+            template = template_name(path)
+            out << "      when #{template.inspect} then view_#{template.tr('/', '_')}(locals)\n"
+          end
+          out << "      else \"\"\n"
+          out << "      end\n"
+        end
+        out << (layout ? "    layout_view(inner)\n" : "    inner\n")
+        out << "  end\n"
+        out
       end
 
       def compile_view(path, method_name, locals, replace_yield)
@@ -492,25 +505,49 @@ module Izen
         IGNORE
       end
 
-      # Kamal deploy config, copied from the source app when present.
+      # Kamal deploy config for the native binary. The source app's
+      # config/deploy.yml is reused when present (it holds the real servers,
+      # host and registry); otherwise a working default is generated. Either way
+      # the proxy port is pinned to 3000 to match the generated Dockerfile, and
+      # an empty .kamal/secrets is written so `kamal deploy` can start.
       def write_kamal
-        deploy = File.join(@source, "config", "deploy.yml")
-        if File.file?(deploy)
-          text = File.read(deploy)
-          text = text.gsub(/^(\s*)#\s*app_port:\s*\d+\s*$/, '\1app_port: 3000')
-          unless text.include?("app_port: 3000")
-            text = text.sub(/^(proxy:\s*\n)/, "\\1  app_port: 3000\n")
-          end
-          FileUtils.mkdir_p(File.join(@out, "config"))
-          File.write(File.join(@out, "config", "deploy.yml"), text)
-        end
+        FileUtils.mkdir_p(File.join(@out, "config"))
+        File.write(File.join(@out, "config", "deploy.yml"), native_deploy_yml)
 
+        FileUtils.mkdir_p(File.join(@out, ".kamal"))
+        write_kamal_secrets
+        copy_kamal_extras
+      end
+
+      def native_deploy_yml
+        deploy = File.join(@source, "config", "deploy.yml")
+        text   = File.file?(deploy) ? File.read(deploy) : Izen::Cli::Kamal.deploy_yml(@name)
+
+        text = text.gsub(/^(\s*)#\s*app_port:\s*\d+\s*$/, '\1app_port: 3000')
+        unless text.include?("app_port: 3000")
+          text = text.sub(/^(proxy:\s*\n)/, "\\1  app_port: 3000\n")
+        end
+        text
+      end
+
+      def write_kamal_secrets
+        source = File.join(@source, ".kamal", "secrets")
+        target = File.join(@out, ".kamal", "secrets")
+        if File.file?(source)
+          FileUtils.cp(source, target)
+        else
+          File.write(target, Izen::Cli::Kamal.secrets(@name))
+        end
+      end
+
+      # Any other files the source app keeps under .kamal/ (hooks, keys, ...)
+      # are copied through untouched.
+      def copy_kamal_extras
         kamal = File.join(@source, ".kamal")
         return unless File.directory?(kamal)
 
-        FileUtils.mkdir_p(File.join(@out, ".kamal"))
         Dir[File.join(kamal, "**", "*")].each do |path|
-          next if File.directory?(path)
+          next if File.directory?(path) || File.basename(path) == "secrets"
 
           relative = path.sub("#{kamal}/", "")
           target   = File.join(@out, ".kamal", relative)

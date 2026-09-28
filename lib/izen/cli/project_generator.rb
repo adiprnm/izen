@@ -4,6 +4,7 @@ require "erb"
 require "fileutils"
 
 require_relative "style"
+require_relative "kamal"
 
 module Izen
   module Cli
@@ -59,6 +60,9 @@ module Izen
           write(path, render(template))
         end
 
+        write("config/deploy.yml", Kamal.deploy_yml(@name))
+        write(".kamal/secrets", Kamal.secrets(@name))
+
         summary
       end
 
@@ -100,6 +104,9 @@ module Izen
         puts "  #{Style.step('bundle install')}"
         puts "  #{Style.step('bundle exec izen migration migrate')}"
         puts "  #{Style.step('bundle exec izen dev')}"
+        puts
+        puts "Kamal deploy config written to #{Style.path('config/deploy.yml')} " \
+             "(secrets in #{Style.path('.kamal/secrets')})."
       end
     end
   end

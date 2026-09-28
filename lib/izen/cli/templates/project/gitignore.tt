@@ -7,6 +7,10 @@
 .env.*
 !.env.example
 
+# Kamal deploy config (kept locally; contains server/registry details and secrets)
+/config/deploy.yml
+/.kamal/
+
 # Logs, temp files and test coverage
 /log/
 /tmp/
