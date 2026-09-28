@@ -21,7 +21,7 @@ module Izen
       # the generated runtime) and are dropped from copied domain files.
       DROPPED_REQUIRES = %w[
         izen roda rack rack/method_override sqlite3 yaml securerandom date
-        fileutils digest openssl logger
+        fileutils digest openssl logger bcrypt vips
       ].freeze
 
       attr_reader :source, :out
@@ -118,7 +118,8 @@ module Izen
 
       def strip_requires(source)
         DROPPED_REQUIRES.each do |gem_name|
-          source = source.gsub(/^require ["']#{Regexp.escape(gem_name)}["']\n/, "")
+          # Match both top-level requires and ones nested inside methods/classes.
+          source = source.gsub(/^\s*require ["']#{Regexp.escape(gem_name)}["']\s*\n/, "")
         end
         source
       end

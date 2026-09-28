@@ -210,6 +210,10 @@ The generated runtime is written to Spinel's subset. A few non-obvious rules
   as the strings SQLite stores.
 - `require "logger"` is unsatisfiable, so the runtime ships a small `Logger`
   stand-in (the common `LOGGER = Logger.new($stdout)` pattern keeps working).
+- `bcrypt` is replaced by a shim over libxcrypt's `String#crypt`, so
+  `BCrypt::Password` keeps working without the C-extension gem.
+- `ruby-vips` is stubbed: image conversion raises and the caller keeps the
+  original bytes.
 - YAML is unavailable, so the database paths from `config/database.yaml` are
   baked into `generated/database_config.rb` at generation time.
 
