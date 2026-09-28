@@ -99,7 +99,7 @@ module Izen
         puts "  #{Style.step("cd #{@name}")}"
         puts "  #{Style.step('bundle install')}"
         puts "  #{Style.step('bundle exec izen migration migrate')}"
-        puts "  #{Style.step('bundle exec rackup')}"
+        puts "  #{Style.step('bundle exec izen dev')}"
       end
     end
   end

@@ -4,17 +4,19 @@ require "fileutils"
 
 require_relative "database"
 require_relative "cli/style"
+require_relative "cli/inflector"
 require_relative "cli/module_generator"
 require_relative "cli/project_generator"
 
 # Command line interface. Commands are grouped by concern.
 #
 #   izen new blog
+#   izen dev [--port PORT]
 #   izen migration migrate
 #   izen migration rollback [STEP]
 #   izen migration status
 #   izen migration generate create_users
-#   izen module new posts title:string body:text
+#   izen module new post title:string body:text
 #
 # The target environment is selected with APP_ENV (development by default):
 #
@@ -22,6 +24,7 @@ require_relative "cli/project_generator"
 module Izen
   module Cli
     VERSION_FORMAT = "%06d"
+    DEFAULT_PORT   = "3000"
 
     module_function
 
@@ -170,6 +173,8 @@ module Izen
         run_module(action, argv)
       when "native", "spinel", "build"
         run_native(action, argv)
+      when "dev", "server", "serve"
+        dev([ action, *argv ].compact)
       when "new", "init"
         project_new([ action, *argv ])
       when "-h", "--help", nil
@@ -393,12 +398,102 @@ module Izen
       ProjectGenerator.new(name, **options).call
     end
 
+    # Boots the development server (`rackup`, backed by Puma when the app's
+    # Gemfile ships it):
+    #
+    #   izen dev [--port PORT] [--host HOST] [--config PATH] [--env ENV]
+    #
+    # Runs from `Izen.root`, preferring `bundle exec` when the app has a
+    # Gemfile so its pinned puma/rackup are used.
+    def dev(argv)
+      options = dev_options(argv)
+      config  = options[:config]
+
+      unless File.file?(File.join(root, config))
+        abort Style.error("no #{config} found — run `izen new` or create one")
+      end
+
+      command        = dev_command(config, options)
+      env            = {}
+      env["APP_ENV"] = options[:env] if options[:env]
+
+      puts Style.dim("$ #{command.join(' ')}")
+      result = system(env, *command, chdir: root)
+
+      if result.nil?
+        abort Style.error("could not start the dev server — is `rackup` installed and on PATH?")
+      elsif !result
+        abort Style.error("dev server exited with status #{$?.exitstatus}")
+      end
+    end
+
+    # Parses `izen dev` options. PORT/HOST default from the environment.
+    def dev_options(argv)
+      options = {
+        config: "config.ru",
+        port:   ENV.fetch("PORT", DEFAULT_PORT),
+        host:   ENV["HOST"]
+      }
+
+      until argv.empty?
+        case (arg                                   = argv.shift)
+        when "-p", "--port" then options[:port]     = argv.shift
+        when "-o", "--host", "--bind"
+                              then options[:host]   = argv.shift
+        when "-c", "--config" then options[:config] = argv.shift
+        when "-e", "--env"    then options[:env]    = argv.shift
+        when "-h", "--help"   then puts dev_usage; exit 0
+        when /\A-/            then abort Style.error("unknown option: #{arg}")
+        else abort Style.error("unexpected argument: #{arg}")
+        end
+      end
+
+      options
+    end
+
+    # Builds the `rackup` invocation, wrapping it in `bundle exec` when the app
+    # has a Gemfile. The port is always passed explicitly so the default lives
+    # here (3000) rather than in rackup (9292).
+    def dev_command(config, options)
+      command = []
+      command << "bundle" << "exec" if File.file?(File.join(root, "Gemfile"))
+      command << "rackup" << config
+      command << "-p" << (options[:port] || DEFAULT_PORT).to_s
+      command << "-o" << options[:host].to_s if options[:host]
+      command
+    end
+
+    def dev_usage
+      [
+        "#{Style.heading('Usage:')} #{Style.command('izen dev')} [options]",
+        "",
+        "Boot the development server (Rack + Puma via `rackup`).",
+        "",
+        Style.heading("Options:"),
+        help_flag("-p, --port PORT", "port to bind (default: 3000)"),
+        help_flag("-o, --host HOST", "host/interface to bind"),
+        help_flag("-c, --config PATH", "Rack config file (default: config.ru)"),
+        help_flag("-e, --env ENV", "APP_ENV to run under (default: development)"),
+        "",
+        Style.heading("Environment:"),
+        help_flag("PORT", "same as --port"),
+        help_flag("HOST", "same as --host"),
+        "",
+        Style.heading("Examples:"),
+        "  #{Style.command('izen dev')}",
+        "  #{Style.command('izen dev --port 3000 --host 0.0.0.0')}"
+      ].join("\n")
+    end
+
     def usage
       [
         "#{Style.heading('Usage:')} #{Style.command('izen')} <group> <command> [args]",
         "",
         Style.heading("New project:"),
         help_entry("new NAME", "scaffold a new project in ./NAME"),
+        "",
+        Style.heading("Development:"),
+        help_entry("dev", "boot the development server (`rackup`)"),
         "",
         Style.heading("Migration:"),
         help_entry("migration generate NAME", "create an empty up/down migration pair"),
@@ -407,7 +502,7 @@ module Izen
         help_entry("migration status", "show applied and pending migrations"),
         "",
         Style.heading("Module:"),
-        help_entry("module new NAME", "scaffold a domain module"),
+        help_entry("module new NAME", "scaffold a domain module (NAME is singular)"),
         help_entry("[field:type ...]", "fields to generate (see field types below)"),
         "",
         Style.heading("Native:"),
@@ -433,10 +528,11 @@ module Izen
         "",
         Style.heading("Examples:"),
         "  #{Style.command('izen new blog')}",
+        "  #{Style.command('izen dev --port 3000')}",
         "  #{Style.command('izen migration generate create_users')}",
         "  #{Style.command('izen migration migrate')}",
         "  #{Style.command('izen migration rollback 2')}",
-        "  #{Style.command('izen module new posts title:string body:text')}",
+        "  #{Style.command('izen module new post title:string body:text')}",
         "",
         "#{Style.heading('Environment:')} APP_ENV=#{Style.path(Database.env)}"
       ].join("\n")

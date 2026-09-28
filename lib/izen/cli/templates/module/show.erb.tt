@@ -1,4 +1,4 @@
-<p><a href="/<%= @name %>">&larr; kembali</a></p>
+<p><a href="/<%= @plural %>">&larr; kembali</a></p>
 
 <h1><%%= item.<%= @primary.name %> %></h1>
 

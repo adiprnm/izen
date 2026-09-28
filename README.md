@@ -85,12 +85,15 @@ It also enables `:all_verbs` so routes can match `r.put`, `r.patch` and
 ```sh
 izen new blog                          # scaffold a new project in ./blog
 
+izen dev                               # boot the dev server on :3000
+izen dev --port 4000 --host 0.0.0.0    # bind a custom address
+
 izen migration generate create_users   # empty up/down migration pair
 izen migration migrate                 # run pending up migrations
 izen migration rollback [STEP]         # roll back the last STEP migrations
 izen migration status                  # show applied/pending migrations
 
-izen module new posts title:string body:text   # scaffold a domain module
+izen module new post title:string body:text    # scaffold a domain module
 ```
 
 `izen new` writes a runnable Roda + SQLite skeleton: `app.rb`, `config.ru`,
@@ -103,7 +106,23 @@ and editor/OS noise. Pass `--force` to scaffold into a non-empty directory or
 `--no-test` to skip the test files.
 
 `izen module new` writes `app/<name>/{model,contract,repository,controller}.rb`,
-colocated tests, views, a migration and a route entry in `app.rb`.
+colocated tests, views, a migration and a route entry in `app.rb`. The module
+name is **singular** (`post`, `blog_post`): the namespace, directory and views
+use it as-is, while the SQL table and the routes are **plural** (`posts`,
+`blog_posts`) — the generator pluralises for you. Passing a plural name aborts
+with the singular form to use.
+
+Generated routes are RESTful: `index`/`create` on `/posts`, `show`/`update`/
+`destroy` on `/posts/:id`. `update` and `destroy` use the `PUT` and `DELETE`
+verbs (via Roda's `:all_verbs`); the generated edit/delete forms reach them by
+POSTing a hidden `_method=put` / `_method=delete` field that `Rack::MethodOverride`
+converts.
+
+`izen dev` boots the app's `config.ru` through `rackup` (Puma when the app's
+Gemfile ships it), running from the app root and preferring `bundle exec` when a
+Gemfile is present. It binds port 3000 by default; `--port`/`-p`,
+`--host`/`-o`, `--config`/`-c` and `--env`/`-e` (the latter sets `APP_ENV`) are
+supported, with `PORT` and `HOST` from the environment as defaults.
 
 CLI output is colorized on a TTY: green for created/migrated files, yellow for
 pending migrations and skips, red for errors, cyan for paths and commands. Piped

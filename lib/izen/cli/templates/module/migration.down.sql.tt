@@ -1,1 +1,1 @@
-DROP TABLE IF EXISTS <%= @name %>;
+DROP TABLE IF EXISTS <%= @plural %>;

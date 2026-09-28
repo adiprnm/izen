@@ -4,13 +4,18 @@ require "erb"
 require "fileutils"
 
 require_relative "style"
+require_relative "inflector"
 
 module Izen
   module Cli
     # Scaffolds a domain module: app files, colocated tests, views, a migration
     # and a route entry in app.rb.
     #
-    #   Cli::ModuleGenerator.new("posts", [["title", "string"]]).call
+    # The module name is **singular** (`post`, `blog_post`): the namespace,
+    # directory and views use it as-is, while the SQL table and the routes are
+    # **plural** (`posts`, `blog_posts`).
+    #
+    #   Cli::ModuleGenerator.new("post", [["title", "string"]]).call
     #
     # File templates live in lib/cli/templates/module/*.tt and are rendered with ERB
     # in the context of this generator (so they can use @name, @fields, and the
@@ -43,6 +48,7 @@ module Izen
       def initialize(name, field_pairs, tests: true, views: true, migration: true, routes: true, force: false)
         @name      = normalize_name(name)
         @namespace = camelize(@name)
+        @plural    = Inflector.pluralize(@name)
         @fields    = build_fields(field_pairs)
         @primary   = @fields.first
         @tests     = tests
@@ -92,7 +98,7 @@ module Izen
 
       def write_migration_file
         Cli.write_migration(
-          "create_#{@name}",
+          "create_#{@plural}",
           render("migration.up.sql.tt"),
           render("migration.down.sql.tt")
         )
@@ -124,8 +130,8 @@ module Izen
         path   = File.join(@root, "app.rb")
         source = File.read(path)
 
-        if source.include?("r.on \"#{@name}\" do")
-          puts Style.skipped("routes (/#{@name} already registered in app.rb)")
+        if source.include?("r.on \"#{@plural}\" do")
+          puts Style.skipped("routes (/#{@plural} already registered in app.rb)")
           return
         end
 
@@ -140,7 +146,7 @@ module Izen
         line_start = line_start ? line_start + 1 : 0
         source.insert(line_start, "#{routes_snippet}\n")
         File.write(path, source)
-        puts Style.updated("app.rb (added /#{@name} routes)")
+        puts Style.updated("app.rb (added /#{@plural} routes)")
       end
 
       def routes_snippet
@@ -274,7 +280,15 @@ module Izen
                          .downcase
 
         unless normalized.match?(/\A[a-z][a-z0-9_]*\z/)
-          abort Style.error("invalid module name #{name.inspect} (use snake_case, e.g. blog_posts)")
+          abort Style.error("invalid module name #{name.inspect} (use snake_case, e.g. blog_post)")
+        end
+
+        singular = Inflector.singularize(normalized)
+        if singular != normalized
+          abort Style.error(
+            "module name #{normalized.inspect} looks plural; use the singular #{singular.inspect} " \
+            "(the table and routes become #{Inflector.pluralize(singular).inspect})"
+          )
         end
 
         normalized
@@ -301,7 +315,7 @@ module Izen
         puts "#{Style.heading("Module #{@namespace}")} scaffolded in #{Style.path("app/#{@name}")}."
         if @migration
           puts "Run #{Style.step('bundle exec izen migration migrate')} to create the " \
-               "#{Style.path(@name)} table."
+               "#{Style.path(@plural)} table."
         end
       end
     end

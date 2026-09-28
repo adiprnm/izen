@@ -1,13 +1,14 @@
 <h1><%= @namespace %></h1>
 
-<p><a href="/<%= @name %>/new">Tambah data</a></p>
+<p><a href="/<%= @plural %>/new">Tambah data</a></p>
 
 <ul>
   <%% items.each do |item| %>
     <li>
-      <a href="/<%= @name %>/<%%= item.id %>"><%%= item.<%= @primary.name %> %></a>
-      <a href="/<%= @name %>/<%%= item.id %>/edit">ubah</a>
-      <form method="post" action="/<%= @name %>/<%%= item.id %>/delete" class="inline">
+      <a href="/<%= @plural %>/<%%= item.id %>"><%%= item.<%= @primary.name %> %></a>
+      <a href="/<%= @plural %>/<%%= item.id %>/edit">ubah</a>
+      <form method="post" action="/<%= @plural %>/<%%= item.id %>" class="inline">
+        <input type="hidden" name="_method" value="delete">
         <button type="submit">hapus</button>
       </form>
     </li>

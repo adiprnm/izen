@@ -9,8 +9,11 @@ app on top of the Izen core (SQLite, no ORM, no autoloader).
 bundle install
 cp .env.example .env
 bundle exec izen migration migrate
-bundle exec rackup
+bundle exec izen dev
 ```
+
+`izen dev` boots the Rack/Puma development server on port 3000. Pass
+`--port PORT` / `--host HOST` to change the bind address.
 
 ## Layout
 
@@ -26,7 +29,7 @@ bundle exec rackup
 ## Adding a module
 
 ```sh
-bundle exec izen module new posts title:string body:text
+bundle exec izen module new post title:string body:text
 bundle exec izen migration migrate
 ```
 

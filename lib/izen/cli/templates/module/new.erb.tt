@@ -1,4 +1,4 @@
-<p><a href="/<%= @name %>">&larr; kembali</a></p>
+<p><a href="/<%= @plural %>">&larr; kembali</a></p>
 
 <h1>Tambah <%= @namespace %></h1>
 
@@ -12,7 +12,7 @@
   </ul>
 <%% end %>
 
-<form method="post" action="/<%= @name %>">
+<form method="post" action="/<%= @plural %>">
 <%= form_fields %>
   <button type="submit">Simpan</button>
 </form>

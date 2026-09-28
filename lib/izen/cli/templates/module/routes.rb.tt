@@ -1,15 +1,15 @@
-    r.on "<%= @name %>" do
+    r.on "<%= @plural %>" do
       controller = <%= @namespace %>::Controller.new(self)
 
       r.get("new") { controller.new }
 
       r.on Integer do |id|
-        r.get("edit")    { controller.edit(id) }
-        r.post("delete") { controller.destroy(id, r) }
+        r.get("edit") { controller.edit(id) }
 
         r.is do
-          r.get  { controller.show(id) }
-          r.post { controller.update(id, r) }
+          r.get    { controller.show(id) }
+          r.put    { controller.update(id, r) }
+          r.delete { controller.destroy(id, r) }
         end
       end
 

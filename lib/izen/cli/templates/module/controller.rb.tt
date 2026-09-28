@@ -30,7 +30,7 @@ module <%= @namespace %>
       if result.success?
         repository.create(Model.new(result.to_h))
         flash("notice", "Data <%= @namespace %> berhasil dibuat.")
-        request.redirect("/<%= @name %>")
+        request.redirect("/<%= @plural %>")
       else
         render("<%= @name %>/new", item: Model.new(request.params, strict: false), errors: result.errors.to_h)
       end
@@ -49,7 +49,7 @@ module <%= @namespace %>
       if result.success?
         repository.update(Model.new(result.to_h.merge(id: id)))
         flash("notice", "Data <%= @namespace %> berhasil diperbarui.")
-        request.redirect("/<%= @name %>")
+        request.redirect("/<%= @plural %>")
       else
         render("<%= @name %>/edit", item: Model.new(request.params.merge(id: id), strict: false), errors: result.errors.to_h)
       end
@@ -59,7 +59,7 @@ module <%= @namespace %>
       item = repository.find(id)
       repository.delete(item) if item
       flash("notice", "Data <%= @namespace %> berhasil dihapus.")
-      request.redirect("/<%= @name %>")
+      request.redirect("/<%= @plural %>")
     end
 
     private

@@ -130,20 +130,89 @@ class CliTest < TestSupport::DatabaseTest
     FileUtils.remove_entry(dir)
   end
 
-  def test_module_new_scaffolds_a_module
+  def test_dev_command_prefers_bundle_exec_when_the_app_has_a_gemfile
+    dir       = Dir.mktmpdir("izen-dev")
+    previous  = Izen.root
+    Izen.root = dir
+    File.write(File.join(dir, "Gemfile"), "source 'https://rubygems.org'\n")
+
+    command = Izen::Cli.dev_command("config.ru", port: "3000", host: "0.0.0.0")
+
+    assert_equal %w[bundle exec rackup config.ru -p 3000 -o 0.0.0.0], command
+  ensure
+    Izen.root = previous
+    FileUtils.remove_entry(dir)
+  end
+
+  def test_dev_command_falls_back_to_rackup_without_a_gemfile
+    dir       = Dir.mktmpdir("izen-dev")
+    previous  = Izen.root
+    Izen.root = dir
+
+    assert_equal %w[rackup config.ru -p 3000], Izen::Cli.dev_command("config.ru", {})
+  ensure
+    Izen.root = previous
+    FileUtils.remove_entry(dir)
+  end
+
+  def test_dev_options_default_to_port_3000
+    options = Izen::Cli.dev_options([])
+
+    assert_equal "3000", options[:port]
+  end
+
+  def test_dev_options_parse_port_host_config_and_env
+    options = Izen::Cli.dev_options(%w[--port 3000 -o 0.0.0.0 -c web.ru -e production])
+
+    assert_equal "3000",       options[:port]
+    assert_equal "0.0.0.0",    options[:host]
+    assert_equal "web.ru",     options[:config]
+    assert_equal "production", options[:env]
+  end
+
+  def test_dev_aborts_when_the_config_file_is_missing
+    dir       = Dir.mktmpdir("izen-dev")
+    previous  = Izen.root
+    Izen.root = dir
+
+    error = assert_raises(SystemExit) { quiet_errors { Izen::Cli.dev([]) } }
+    refute_equal 0, error.status
+  ensure
+    Izen.root = previous
+    FileUtils.remove_entry(dir)
+  end
+
+  def test_module_new_scaffolds_a_singular_module_with_plural_routes_and_table
     dir       = Dir.mktmpdir("izen-scaffold")
     previous  = Izen.root
     Izen.root = dir
     FileUtils.mkdir_p(File.join(dir, "migrations"))
     File.write(File.join(dir, "app.rb"), "# cli:module-routes\n")
 
-    quiet { Izen::Cli.scaffold("posts", [ [ "title", "string" ] ]) }
+    quiet { Izen::Cli.scaffold("post", [ [ "title", "string" ] ]) }
 
-    assert File.file?(File.join(dir, "app", "posts", "model.rb"))
-    assert File.file?(File.join(dir, "app", "posts", "repository.rb"))
-    assert File.file?(File.join(dir, "views", "posts", "index.erb"))
+    assert File.file?(File.join(dir, "app", "post", "model.rb"))
+    assert File.file?(File.join(dir, "app", "post", "repository.rb"))
+    assert File.file?(File.join(dir, "views", "post", "index.erb"))
     assert File.file?(File.join(dir, "migrations", "000001_create_posts.up.sql"))
+    assert_match(%r{CREATE TABLE posts}, File.read(File.join(dir, "migrations", "000001_create_posts.up.sql")))
+    assert_match(%r{SELECT \* FROM posts}, File.read(File.join(dir, "app", "post", "repository.rb")))
     assert_match(%r{r\.on "posts"}, File.read(File.join(dir, "app.rb")))
+  ensure
+    Izen.root = previous
+    FileUtils.remove_entry(dir)
+  end
+
+  def test_module_new_rejects_a_plural_name
+    dir       = Dir.mktmpdir("izen-scaffold")
+    previous  = Izen.root
+    Izen.root = dir
+    FileUtils.mkdir_p(File.join(dir, "migrations"))
+    File.write(File.join(dir, "app.rb"), "# cli:module-routes\n")
+
+    error = assert_raises(SystemExit) { quiet_errors { Izen::Cli.scaffold("posts", []) } }
+    refute_equal 0, error.status
+    refute File.exist?(File.join(dir, "app", "posts"))
   ensure
     Izen.root = previous
     FileUtils.remove_entry(dir)

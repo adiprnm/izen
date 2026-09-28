@@ -30,16 +30,16 @@ class NativeTest < Minitest::Test
     check "root",            req("GET", "/").body.include?("Hello from Demo")
     index = req("GET", "/widgets").body
     check "index",           index.include?("Tambah data")
-    check "layout raw",      index.include?("<h1>Widgets</h1>")
+    check "layout raw",      index.include?("<h1>Widget</h1>")
     check "layout escaped",  !index.include?("&lt;h1&gt;")
     check "new form",        req("GET", "/widgets/new").status == 200
     check "create redirect", req("POST", "/widgets", "", "name=Bolt&price=42&description=x", form).status == 302
     check "list has row",    req("GET", "/widgets").body.include?("Bolt")
     check "show",            req("GET", "/widgets/1").body.include?("42")
-    check "update",          req("POST", "/widgets/1", "", "name=Bolt+2&price=43&description=y", form).status == 302
+    check "update",          req("POST", "/widgets/1", "", "_method=put&name=Bolt+2&price=43&description=y", form).status == 302
     check "updated",         req("GET", "/widgets").body.include?("Bolt 2")
     check "validation",      req("POST", "/widgets", "", "name=&price=1&description=z", form).body.include?("wajib diisi")
-    check "delete",          req("POST", "/widgets/1/delete").status == 302
+    check "delete",          req("POST", "/widgets/1", "", "_method=delete", form).status == 302
     check "deleted",         !req("GET", "/widgets").body.include?("Bolt")
     check "not found",       req("GET", "/nope").status == 404
 
@@ -112,7 +112,7 @@ class NativeTest < Minitest::Test
     project = File.join(dir, "demo")
 
     Izen.root = project
-    quiet { Izen::Cli.run([ "module", "new", "widgets", "name:string", "price:integer", "description:text" ]) }
+    quiet { Izen::Cli.run([ "module", "new", "widget", "name:string", "price:integer", "description:text" ]) }
 
     project
   ensure

@@ -4,6 +4,7 @@ ENV["APP_ENV"] ||= "test"
 
 require "minitest/autorun"
 require "rack/test"
+require "stringio"
 require_relative "../app"
 
 module AppTestHelper
@@ -11,5 +12,51 @@ module AppTestHelper
 
   def app
     App
+  end
+end
+
+# Base classes for scaffolded module tests.
+module TestSupport
+  # Applies pending migrations once per process (silently) so tests run against
+  # the test schema.
+  def self.prepare_database!
+    return if @prepared
+
+    silent do
+      Izen::Cli.migrate
+      @prepared = true
+    end
+  end
+
+  # Runs the block with $stdout discarded.
+  def self.silent
+    original = $stdout
+    $stdout  = StringIO.new
+    yield
+  ensure
+    $stdout = original
+  end
+
+  # Base for tests that touch the database. Each test runs inside a transaction
+  # that is rolled back afterwards, keeping tests isolated.
+  class DatabaseTest < Minitest::Test
+    def setup
+      TestSupport.prepare_database!
+      @db = Izen::Database.connection
+      @db.execute("BEGIN")
+    end
+
+    def teardown
+      @db&.execute("ROLLBACK")
+    end
+  end
+
+  # Base for controller tests: database isolation plus Rack::Test against App.
+  class ControllerTest < DatabaseTest
+    include Rack::Test::Methods
+
+    def app
+      App
+    end
   end
 end

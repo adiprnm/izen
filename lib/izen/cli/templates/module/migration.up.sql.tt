@@ -1,4 +1,4 @@
-CREATE TABLE <%= @name %> (
+CREATE TABLE <%= @plural %> (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
 <% @fields.each do |field| -%>
   <%= field.name.ljust(11) %> <%= sql_type(field) %>,
