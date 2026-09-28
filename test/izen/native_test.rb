@@ -303,6 +303,11 @@ class NativeTest < Minitest::Test
       "",
       "va",
       "--#{boundary}",
+      'Content-Disposition: form-data; name="qris_image"; filename=""',
+      "Content-Type: application/octet-stream",
+      "",
+      "",
+      "--#{boundary}",
       'Content-Disposition: form-data; name="site_favicon"; filename="logo.png"',
       "Content-Type: image/png",
       "",
@@ -325,6 +330,7 @@ class NativeTest < Minitest::Test
     check "method param", params["_method"] == "patch"
     check "method swap",  req.request_method == "PATCH"
     check "array",        params["channels"] == %w[qris va]
+    check "blank file",   !params.key?("qris_image")
     check "filename",     file.is_a?(Hash) && file[:filename] == "logo.png"
     check "type",         file.is_a?(Hash) && file[:type] == "image/png"
     check "content",      file.is_a?(Hash) && file[:tempfile].read == "PNGDATA"

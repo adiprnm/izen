@@ -172,13 +172,18 @@ class Request
       name = raw_headers[/name="([^"]*)"/, 1]
       next if name.nil? || name.empty?
 
-      Rack::Utils.normalize(merged, name, multipart_value(raw_headers, name, content), 0)
+      # An empty `filename=""` part is an "input with no file chosen"
+      # (Firefox sends these); Rack drops it, so skip it instead of treating it
+      # as a zero-extension upload.
+      filename = raw_headers[/filename="([^"]*)"/, 1]
+      next if filename && filename.empty?
+
+      Rack::Utils.normalize(merged, name, multipart_value(raw_headers, name, content, filename), 0)
     end
   end
 
-  def multipart_value(raw_headers, name, content)
-    filename = raw_headers[/filename="([^"]*)"/, 1]
-    return content unless filename
+  def multipart_value(raw_headers, name, content, filename)
+    return content if filename.nil?
 
     {
       filename: filename,
