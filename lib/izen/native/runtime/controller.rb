@@ -25,6 +25,20 @@ module Base
     def request = app.request
     def response = app.response
     def h(text) = app.h(text)
+    def logger = app.logger
+    def headers = app.response.headers
+
+    def halt(status, message = "")
+      request.halt(status, message)
+    end
+
+    def content_type(value)
+      app.response["Content-Type"] = value
+    end
+
+    def status(value)
+      app.response.status = value
+    end
 
     def flash(key, message)
       app.flash[key.to_s] = message
