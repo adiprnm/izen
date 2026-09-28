@@ -293,9 +293,17 @@ module Izen
 
       def write_views
         locals_by_template = @an.render_locals
+        # Partials rendered from inside a template carry their locals in the
+        # template, not a controller. Compile every view and scan the generated
+        # Ruby for `view`/`render` calls so those partials get their locals.
+        @an.view_files.each do |path|
+          engine = Erubi::Engine.new(File.read(path), bufvar: "@_out_buf", escape: @an.view_escape?, escapefunc: "h")
+          @an.collect_render_locals(engine.src, locals_by_template)
+        end
         out                = +"# frozen_string_literal: true\n\nmodule Views\n"
 
-        views = @an.view_files.reject { |path| File.basename(path) == "layout.erb" }
+        layout_files = @an.view_files.select { |path| layout_file?(path) }
+        views        = @an.view_files - layout_files
         views.each do |path|
           template = template_name(path)
           locals   = locals_by_template[template] || []
@@ -303,20 +311,37 @@ module Izen
           out << "\n"
         end
 
-        layout = @an.view_files.find { |path| File.basename(path) == "layout.erb" }
-        out << compile_view(layout, "layout_view", [], "content") if layout
-        out << "\n"
+        layout_files.each do |path|
+          out << compile_view(path, "layout_view_#{template_name(path).tr('/', '_')}", [], "content")
+          out << "\n"
+        end
 
-        out << render_view_method(views, layout: !layout.nil?)
+        out << render_view_method(views, layouts: layout_files, default_layout: default_layout(layout_files))
 
         out << "end\n"
         File.write(File.join(@out, "generated", "views.rb"), out)
       end
 
+      # A layout is a template under `views/layouts/` or `views/layout.erb`.
+      # (`views/admin/products/layout_edit.erb` is a normal view.)
+      def layout_file?(path)
+        path.include?("/views/layouts/") || File.basename(path) == "layout.erb"
+      end
+
+      # The layout applied when a `render`/`view` call does not pass one: the
+      # app's `plugin :render, layout: ...`, or a bare `views/layout.erb`.
+      def default_layout(layout_files)
+        return @an.view_layout if @an.view_layout
+
+        legacy = layout_files.find { |path| File.basename(path) == "layout.erb" }
+        legacy ? template_name(legacy) : nil
+      end
+
       # Spinel's parser rejects a `case` with no `when` branch, so an app that
       # ships only a layout (no module views yet) gets an empty inner body
-      # instead. Likewise, only wrap in the layout when one exists.
-      def render_view_method(views, layout:)
+      # instead. Layouts are selected by name (nil => the app default,
+      # `false` => none), which is how Izen's `layout:` option is passed.
+      def render_view_method(views, layouts:, default_layout:)
         out = +"  def view(template, locals: {}, layout: nil)\n"
         if views.empty?
           out << "    inner = \"\"\n"
@@ -331,7 +356,18 @@ module Izen
           out << "      end\n"
         end
         out << "    return inner if layout == false\n"
-        out << (layout ? "    layout_view(inner)\n" : "    inner\n")
+        if layouts.empty?
+          out << "    inner\n"
+        else
+          out << "    name = layout || #{default_layout.inspect}\n"
+          out << "    case name\n"
+          layouts.each do |path|
+            template = template_name(path)
+            out << "    when #{template.inspect} then layout_view_#{template.tr('/', '_')}(inner)\n"
+          end
+          out << "    else inner\n"
+          out << "    end\n"
+        end
         out << "  end\n"
         out
       end
@@ -343,14 +379,20 @@ module Izen
         # plugin): the engine's escaping follows the app's `escape` option.
         # With `escape: true`, `<%=` escapes through the render scope's `h` and
         # `<%==` emits raw HTML.
-        engine = Erubi::Engine.new(source, bufvar: "@_buf", escape: @an.view_escape?, escapefunc: "h")
+        # Roda/Tilt compile templates against `@_out_buf` (the render plugin
+        # sets `outvar: "@_out_buf"`), so app helpers that manipulate the
+        # output buffer (`capture`, `form_tag`) must see the same variable.
+        engine = Erubi::Engine.new(source, bufvar: "@_out_buf", escape: @an.view_escape?, escapefunc: "h")
 
         out = +"  def #{method_name}(#{replace_yield ? "content" : "locals"})\n"
         # Izen's controller#render exposes locals BOTH as locals and as
-        # instance variables (so views written for either style work).
+        # instance variables (so views written for either style work). The
+        # ivar is only overwritten when the key is present: a view rendered as
+        # a partial (`view("x", layout: false)`) must keep the ivars its parent
+        # already set, instead of resetting them to nil.
         locals.each do |name|
           out << "    #{name} = locals[:#{name}]\n"
-          out << "    @#{name} = #{name}\n"
+          out << "    @#{name} = locals[:#{name}] if locals.key?(:#{name})\n"
         end
         out << "    #{engine.src}\n"
         out << "  end\n"

@@ -2,6 +2,9 @@
 
 require "stringio"
 require "uri"
+require "socket"
+require "openssl"
+require "base64"
 
 # Stand-ins for the third-party libraries the source app uses, written in the
 # subset Spinel can compile. They implement the surface the app calls, so the
@@ -184,7 +187,7 @@ module Nokogiri
   end
 end
 
-# --- Mail -------------------------------------------------------------------
+# --- Mail (SMTP delivery) ---------------------------------------------------
 
 module Mail
   class Message
@@ -195,12 +198,23 @@ module Mail
 
     attr_accessor :from, :to, :subject, :body, :content_type
 
+    def initialize
+      @delivery_method  = :smtp
+      @delivery_options = {}
+    end
+
     def delivery_method(name, options = nil)
-      @delivery_method = name
+      @delivery_method  = name
+      @delivery_options = options || {}
     end
 
     def deliver
-      Message.deliveries << self
+      if @delivery_method == :test
+        Message.deliveries << self
+        return self
+      end
+
+      SMTP.new(@delivery_options).deliver(self)
       self
     end
 
@@ -216,6 +230,213 @@ module Mail
   class TestMailer
     def self.deliveries
       Message.deliveries
+    end
+  end
+
+  # Minimal SMTP client: TCP, implicit TLS (port 465) or STARTTLS (587),
+  # AUTH PLAIN / LOGIN, and a dot-stuffed DATA phase. Enough for the
+  # transactional mail this app sends.
+  class SMTP
+    def initialize(options)
+      @address  = option(options, :address, "localhost").to_s
+      @port     = option(options, :port, 587).to_i
+      @user     = option(options, :user_name, "").to_s
+      @password = option(options, :password, "").to_s
+      @auth     = option(options, :authentication, "plain").to_s
+    end
+
+    def deliver(message)
+      raw        = build_raw(message)
+      from       = extract_address(message.from)
+      recipients = split_addresses(message.to)
+
+      socket = TCPSocket.new(@address, @port)
+      if @port == 465
+        ssl = tls_wrap(socket)
+        read_reply_tls(ssl, 220)
+        ehlo_tls(ssl)
+        return transact_tls(ssl, raw, from, recipients)
+      end
+
+      read_reply_plain(socket, 220)
+      capabilities = ehlo_plain(socket)
+      if capabilities.include?("STARTTLS")
+        write_plain(socket, "STARTTLS\r\n")
+        read_reply_plain(socket, 220)
+        ssl = tls_wrap(socket)
+        ehlo_tls(ssl)
+        return transact_tls(ssl, raw, from, recipients)
+      end
+
+      transact_plain(socket, raw, from, recipients)
+    end
+
+    private
+
+    def option(options, key, fallback)
+      options.key?(key) ? options[key] : fallback
+    end
+
+    def tls_wrap(socket)
+      context        = OpenSSL::SSL::SSLContext.new
+      context.set_params
+      ssl            = OpenSSL::SSL::SSLSocket.new(socket, context)
+      ssl.hostname   = @address
+      ssl.sync_close = true
+      ssl.connect
+      ssl
+    end
+
+    # --- plain path ------------------------------------------------------
+
+    def read_reply_plain(socket, expected)
+      lines = []
+      loop do
+        line = socket.gets
+        raise "SMTP connection closed" if line.nil?
+
+        line = line.chomp
+        lines << line
+        break unless line.length >= 4 && line[3] == "-"
+      end
+      code = lines.last[0, 3].to_i
+      raise "SMTP error #{code}: #{lines.join(' ')}" unless code == expected
+
+      lines
+    end
+
+    def write_plain(socket, data)
+      socket.write(data)
+    end
+
+    def ehlo_plain(socket)
+      write_plain(socket, "EHLO #{Socket.gethostname}\r\n")
+      read_reply_plain(socket, 250).join("\n")
+    end
+
+    def authenticate_plain(socket)
+      if @auth == "login"
+        write_plain(socket, "AUTH LOGIN\r\n")
+        read_reply_plain(socket, 334)
+        write_plain(socket, "#{Base64.strict_encode64(@user)}\r\n")
+        read_reply_plain(socket, 334)
+        write_plain(socket, "#{Base64.strict_encode64(@password)}\r\n")
+        read_reply_plain(socket, 235)
+      else
+        write_plain(socket, "AUTH PLAIN #{Base64.strict_encode64("\0#{@user}\0#{@password}")}\r\n")
+        read_reply_plain(socket, 235)
+      end
+    end
+
+    def transact_plain(socket, raw, from, recipients)
+      authenticate_plain(socket) unless @user.empty?
+      write_plain(socket, "MAIL FROM:<#{from}>\r\n")
+      read_reply_plain(socket, 250)
+      recipients.each do |recipient|
+        write_plain(socket, "RCPT TO:<#{recipient}>\r\n")
+        read_reply_plain(socket, 250)
+      end
+      write_plain(socket, "DATA\r\n")
+      read_reply_plain(socket, 354)
+      write_plain(socket, dot_stuff(raw))
+      write_plain(socket, "\r\n.\r\n")
+      read_reply_plain(socket, 250)
+      write_plain(socket, "QUIT\r\n")
+      socket.close
+      true
+    end
+
+    # --- TLS path --------------------------------------------------------
+
+    def read_reply_tls(ssl, expected)
+      lines = []
+      loop do
+        line = ssl.gets
+        raise "SMTP connection closed" if line.nil?
+
+        line = line.chomp
+        lines << line
+        break unless line.length >= 4 && line[3] == "-"
+      end
+      code = lines.last[0, 3].to_i
+      raise "SMTP error #{code}: #{lines.join(' ')}" unless code == expected
+
+      lines
+    end
+
+    def write_tls(ssl, data)
+      ssl.write(data)
+    end
+
+    def ehlo_tls(ssl)
+      write_tls(ssl, "EHLO #{Socket.gethostname}\r\n")
+      read_reply_tls(ssl, 250).join("\n")
+    end
+
+    def authenticate_tls(ssl)
+      if @auth == "login"
+        write_tls(ssl, "AUTH LOGIN\r\n")
+        read_reply_tls(ssl, 334)
+        write_tls(ssl, "#{Base64.strict_encode64(@user)}\r\n")
+        read_reply_tls(ssl, 334)
+        write_tls(ssl, "#{Base64.strict_encode64(@password)}\r\n")
+        read_reply_tls(ssl, 235)
+      else
+        write_tls(ssl, "AUTH PLAIN #{Base64.strict_encode64("\0#{@user}\0#{@password}")}\r\n")
+        read_reply_tls(ssl, 235)
+      end
+    end
+
+    def transact_tls(ssl, raw, from, recipients)
+      authenticate_tls(ssl) unless @user.empty?
+      write_tls(ssl, "MAIL FROM:<#{from}>\r\n")
+      read_reply_tls(ssl, 250)
+      recipients.each do |recipient|
+        write_tls(ssl, "RCPT TO:<#{recipient}>\r\n")
+        read_reply_tls(ssl, 250)
+      end
+      write_tls(ssl, "DATA\r\n")
+      read_reply_tls(ssl, 354)
+      write_tls(ssl, dot_stuff(raw))
+      write_tls(ssl, "\r\n.\r\n")
+      read_reply_tls(ssl, 250)
+      write_tls(ssl, "QUIT\r\n")
+      ssl.close
+      true
+    end
+
+    # --- shared ----------------------------------------------------------
+
+    def dot_stuff(raw)
+      lines = raw.gsub("\r\n", "\n").gsub("\r", "\n").split("\n", -1)
+      lines.map { |line| line.start_with?(".") ? ".#{line}" : line }.join("\r\n")
+    end
+
+    def build_raw(message)
+      out = "".dup
+      out << "From: #{message.from}\r\n"
+      out << "To: #{message.to}\r\n"
+      out << "Subject: #{message.subject}\r\n"
+      out << "MIME-Version: 1.0\r\n"
+      out << "Content-Type: #{message.content_type}\r\n"
+      out << "\r\n"
+      out << message.body.to_s
+      out
+    end
+
+    def extract_address(value)
+      text = value.to_s
+      open = text.index("<")
+      if open
+        rest  = text[open + 1, text.length]
+        close = rest.index(">")
+        return rest[0, close] if close
+      end
+      text.strip
+    end
+
+    def split_addresses(value)
+      value.to_s.split(",").map { |part| extract_address(part) }.reject { |address| address.empty? }
     end
   end
 end
@@ -475,7 +696,11 @@ module Base
     private
 
     def deliver_message(message)
-      message.delivery_method(self.class.delivery_method == :test ? :test : :smtp)
+      if self.class.delivery_method == :test
+        message.delivery_method :test
+      else
+        message.delivery_method :smtp, self.class.smtp_options
+      end
       message.deliver
       message
     end

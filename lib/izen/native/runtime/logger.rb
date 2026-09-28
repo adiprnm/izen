@@ -61,12 +61,15 @@ class Logger
     return true if severity < @level
 
     message = yield if message.nil? && block_given?
-    @device.puts("#{LABELS[severity] || "ANY"}: #{message}")
+    # `$stdout` directly, not `@device`: Spinel widens an IO stored in an ivar
+    # to a poly slot that will not resolve `puts` at run time. The native
+    # runtime only ever logs to stdout.
+    $stdout.puts("#{LABELS[severity] || "ANY"}: #{message}")
     true
   end
 
   def <<(message)
-    @device.puts(message.to_s)
+    $stdout.puts(message.to_s)
     self
   end
 end

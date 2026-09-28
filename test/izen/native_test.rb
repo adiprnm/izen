@@ -216,6 +216,58 @@ class NativeTest < Minitest::Test
     end
   end
 
+  def test_render_locals_follow_hash_variables_and_helper_returns
+    Dir.mktmpdir("izen-locals") do |dir|
+      FileUtils.mkdir_p(File.join(dir, "app", "admin", "dashboard"))
+      FileUtils.mkdir_p(File.join(dir, "app", "settings"))
+
+      File.write(File.join(dir, "app", "admin", "dashboard", "controller.rb"), <<~RUBY)
+        module Admin
+          module Dashboard
+            class Controller
+              def index
+                locals = { ranges: [], revenue: 1 }
+                locals[:chart_labels] = []
+                render("admin/dashboard/index", locals)
+              end
+            end
+          end
+        end
+      RUBY
+
+      File.write(File.join(dir, "app", "settings", "controller.rb"), <<~RUBY)
+        module Settings
+          class Controller
+            def edit
+              render("settings/edit", settings_locals)
+            end
+
+            def settings_locals
+              { active_tab: "site", site_name: Setting.get("site_name") }
+            end
+          end
+        end
+      RUBY
+
+      locals = Izen::Native::Analyzer.new(dir).render_locals
+
+      assert_equal %w[ranges revenue chart_labels], locals["admin/dashboard/index"]
+      assert_equal %w[active_tab site_name], locals["settings/edit"]
+    end
+  end
+
+  def test_views_only_overwrite_ivars_whose_locals_are_present
+    Dir.mktmpdir("izen-native") do |dir|
+      source = scaffold_project(dir)
+      out    = File.join(dir, "native")
+
+      Izen::Native::Generator.new(source, out).run
+
+      views = File.read(File.join(out, "generated", "views.rb"))
+      assert_includes views, "if locals.key?(", "parent ivars must survive a partial render"
+    end
+  end
+
   private
 
   # Builds a minimal Izen app with `izen new` (+ a module unless disabled).

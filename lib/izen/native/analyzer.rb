@@ -236,12 +236,26 @@ module Izen
       # --- render locals ----------------------------------------------------
 
       # template name => union of local variable names passed by controllers
-      # and helpers, via `render`/`view` keyword arguments or a `locals:` hash.
+      # and helpers: keyword args, a literal hash, a local hash variable
+      # (`locals = { ... }; render(tpl, locals)`), or a helper that returns a
+      # hash (`render(tpl, settings_locals(tab))`).
       def render_locals
         result = {}
         (controller_files + support_files + lib_files).uniq.each do |path|
-          source = File.read(path)
-          tree   = Prism.parse(source).value
+          collect_render_locals(File.read(path), result)
+        end
+        result
+      end
+
+      # Merges the `render`/`view` locals found in one Ruby source into
+      # +result+ (template => local names). The generator also feeds compiled
+      # ERB sources here, so a partial reached from a template
+      # (`view(".../_form", locals: {...})`) gets its locals too.
+      def collect_render_locals(source, result)
+          tree    = Prism.parse(source).value
+          hashes  = hash_local_keys(tree)
+          methods = method_hash_keys(tree)
+
           Node.walk(tree) do |node|
             next unless node.is_a?(Prism::CallNode) && %i[render view].include?(node.name) && node.arguments
 
@@ -251,28 +265,85 @@ module Izen
 
             key           = template.unescaped
             result[key] ||= []
+            add           = ->(name) { result[key] << name unless result[key].include?(name) }
+
             args[1..].each do |arg|
-              next unless arg.is_a?(Prism::KeywordHashNode)
+              case arg
+              when Prism::LocalVariableReadNode
+                (hashes[arg.name.to_s] || []).each { |name| add.call(name) }
+              when Prism::CallNode
+                if arg.receiver.nil? || arg.receiver.is_a?(Prism::SelfNode)
+                  (methods[arg.name.to_s] || []).each { |name| add.call(name) }
+                end
+              when Prism::HashNode
+                hash_node_keys(arg).each { |name| add.call(name) }
+              when Prism::KeywordHashNode
+                arg.elements.each do |assoc|
+                  next unless assoc.is_a?(Prism::AssocNode)
 
-              arg.elements.each do |assoc|
-                next unless assoc.is_a?(Prism::AssocNode)
-
-                name = Node.literal(assoc.key).to_s
-                if name == "locals" && assoc.value.is_a?(Prism::HashNode)
-                  assoc.value.elements.each do |inner|
-                    next unless inner.is_a?(Prism::AssocNode)
-
-                    local = Node.literal(inner.key).to_s
-                    result[key] << local unless result[key].include?(local)
+                  name = Node.literal(assoc.key).to_s
+                  if name == "locals" && assoc.value.is_a?(Prism::HashNode)
+                    hash_node_keys(assoc.value).each { |local| add.call(local) }
+                  else
+                    add.call(name)
                   end
-                else
-                  result[key] << name unless result[key].include?(name)
                 end
               end
             end
           end
-        end
         result
+      end
+
+      # Keys of hash-valued locals built in a file: `locals = { a: ..., b: ... }`
+      # plus later `locals[:c] = ...` additions. name => [keys].
+      def hash_local_keys(tree)
+        keys = Hash.new { |hash, name| hash[name] = [] }
+        add  = ->(name, key) { keys[name] << key unless keys[name].include?(key) }
+
+        Node.walk(tree) do |node|
+          case node
+          when Prism::LocalVariableWriteNode
+            next unless node.value.is_a?(Prism::HashNode)
+
+            name = node.name.to_s
+            hash_node_keys(node.value).each { |key| add.call(name, key) }
+          when Prism::CallNode
+            next unless node.name == :[]= && node.receiver.is_a?(Prism::LocalVariableReadNode)
+
+            args = node.arguments&.arguments || []
+            add.call(node.receiver.name.to_s, Node.literal(args[0]).to_s)
+          end
+        end
+        keys
+      end
+
+      # Method name => keys of the hash it returns (a literal hash as its last
+      # expression or explicit `return`), for helpers that build render locals.
+      def method_hash_keys(tree)
+        keys = {}
+        Node.walk(tree) do |node|
+          next unless node.is_a?(Prism::DefNode)
+
+          keys[node.name.to_s] = hash_node_keys(returned_hash(node.body))
+        end
+        keys
+      end
+
+      def returned_hash(body)
+        return nil unless body.is_a?(Prism::StatementsNode)
+
+        case (last = body.body.last)
+        when Prism::HashNode   then last
+        when Prism::ReturnNode then last.arguments&.arguments&.first
+        end
+      end
+
+      def hash_node_keys(node)
+        return [] unless node.is_a?(Prism::HashNode)
+
+        node.elements.filter_map do |element|
+          Node.literal(element.key).to_s if element.is_a?(Prism::AssocNode)
+        end
       end
 
       # --- routes + app class ----------------------------------------------
@@ -458,18 +529,31 @@ module Izen
       # (`plugin :render, ..., escape: true`). The generated view code must use
       # the same Erubi layout settings, or `<%=` and `<%==` swap meaning.
       def view_escape?
-        tree  = app_tree
-        klass = find_class(tree)
-        return false unless klass&.body
+        Node.literal(view_options[:escape]) == true || Node.literal(view_options[:escape_html]) == true
+      end
 
-        klass.body.body.any? do |statement|
-          next false unless statement.is_a?(Prism::CallNode) && statement.name == :plugin && statement.receiver.nil?
+      # The layout the app's render plugin applies by default
+      # (`plugin :render, layout: "layouts/application"`), or nil.
+      def view_layout
+        layout = Node.literal(view_options[:layout])
+        layout.is_a?(String) ? layout : nil
+      end
 
-          args = statement.arguments&.arguments || []
-          next false unless Node.literal(args[0]) == :render
+      # Keyword options of the App's `plugin :render, ...` call.
+      def view_options
+        @view_options ||= begin
+          tree    = app_tree
+          klass   = find_class(tree)
+          options = {}
+          (klass&.body&.body || []).each do |statement|
+            next unless statement.is_a?(Prism::CallNode) && statement.name == :plugin && statement.receiver.nil?
 
-          options = Node.keyword_hash(args[1] || args[2])
-          Node.literal(options[:escape]) == true || Node.literal(options[:escape_html]) == true
+            args = statement.arguments&.arguments || []
+            next unless Node.literal(args[0]) == :render
+
+            options = Node.keyword_hash(args[1] || args[2])
+          end
+          options
         end
       end
 
