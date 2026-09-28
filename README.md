@@ -208,6 +208,8 @@ The generated runtime is written to Spinel's subset. A few non-obvious rules
   delegators on `Base::Controller`.
 - `require "date"` is unsatisfiable, so `Date`/`DateTime` attributes are kept
   as the strings SQLite stores.
+- `require "logger"` is unsatisfiable, so the runtime ships a small `Logger`
+  stand-in (the common `LOGGER = Logger.new($stdout)` pattern keeps working).
 - YAML is unavailable, so the database paths from `config/database.yaml` are
   baked into `generated/database_config.rb` at generation time.
 

@@ -21,7 +21,7 @@ module Izen
       # the generated runtime) and are dropped from copied domain files.
       DROPPED_REQUIRES = %w[
         izen roda rack rack/method_override sqlite3 yaml securerandom date
-        fileutils digest openssl
+        fileutils digest openssl logger
       ].freeze
 
       attr_reader :source, :out
