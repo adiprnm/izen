@@ -640,10 +640,21 @@ module Izen
       def write_kamal
         FileUtils.mkdir_p(File.join(@out, "config"))
         File.write(File.join(@out, "config", "deploy.yml"), native_deploy_yml)
+        copy_deploy_destinations
 
         FileUtils.mkdir_p(File.join(@out, ".kamal"))
         write_kamal_secrets
         copy_kamal_extras
+      end
+
+      # Kamal destination overrides (`config/deploy.staging.yml`, ...) sit next
+      # to the base config and are merged on top of it by `kamal deploy -d
+      # <name>`. Copy them through so a native staging deploy keeps its own
+      # service/image/host/volume instead of reusing the production ones.
+      def copy_deploy_destinations
+        Dir[File.join(@source, "config", "deploy.*.yml")].each do |path|
+          FileUtils.cp(path, File.join(@out, "config", File.basename(path)))
+        end
       end
 
       def native_deploy_yml
@@ -657,9 +668,12 @@ module Izen
         text
       end
 
+      # Shared secrets live in `.kamal/secrets-common`: Kamal reads that file
+      # for every deploy, with or without a destination, whereas `.kamal/secrets`
+      # is ignored once `-d <destination>` is passed.
       def write_kamal_secrets
         source = File.join(@source, ".kamal", "secrets")
-        target = File.join(@out, ".kamal", "secrets")
+        target = File.join(@out, ".kamal", "secrets-common")
         if File.file?(source)
           FileUtils.cp(source, target)
         else
@@ -667,8 +681,9 @@ module Izen
         end
       end
 
-      # Any other files the source app keeps under .kamal/ (hooks, keys, ...)
-      # are copied through untouched.
+      # Any other files the source app keeps under .kamal/ (hooks, keys,
+      # destination secrets like `secrets.staging`, ...) are copied through
+      # untouched.
       def copy_kamal_extras
         kamal = File.join(@source, ".kamal")
         return unless File.directory?(kamal)
