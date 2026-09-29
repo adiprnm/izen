@@ -205,6 +205,9 @@ module Izen
             out << "    def #{attribute.name}\n"
             out << "      @attrs[:#{attribute.name}]\n"
             out << "    end\n"
+            out << "    def #{attribute.name}=(value)\n"
+            out << "      @attrs[:#{attribute.name}] = value\n"
+            out << "    end\n"
           end
           model[:extra].each { |statement| out << "\n#{statement}\n" }
           out << "  end\n"

@@ -53,6 +53,10 @@ class NativeTest < Minitest::Test
     check "sha512",          SHA512.hexdigest("abc") == "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f"
     check "sha512 block",    SHA512.hexdigest("x" * 200) == "ef978e23dc520404ae16fd17bde9ee5945610d671551d6863a5ffbc99433fc726726e51f989b886191be9325b8f8b03b1a63fe3e5eff23d126c2f41f07d2bf87"
 
+    widget = Widget::Model.new(name: "a", price: 1, description: "d")
+    widget.name = "b"
+    check "model setter",     widget.name == "b"
+
     puts "ALL OK"
   RUBY
   # Minimal app with no module views: only the root route and the layout.
