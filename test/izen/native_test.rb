@@ -225,6 +225,15 @@ class NativeTest < Minitest::Test
     assert_includes output, "ALL OK", "driver output:\n#{output}"
   end
 
+  def test_request_exposes_content_type
+    request = File.expand_path("../../lib/izen/native/runtime/request.rb", __dir__)
+    driver  = File.join(Dir.mktmpdir("izen-content-type"), "driver.rb")
+    File.write(driver, CONTENT_TYPE_DRIVER.sub("REQUEST_PATH", request))
+
+    output = IO.popen([ RbConfig.ruby, driver ], err: [ :child, :out ], &:read)
+    assert_includes output, "ALL OK", "driver output:\n#{output}"
+  end
+
   def test_render_locals_follow_hash_variables_and_helper_returns
     Dir.mktmpdir("izen-locals") do |dir|
       FileUtils.mkdir_p(File.join(dir, "app", "admin", "dashboard"))
@@ -334,6 +343,27 @@ class NativeTest < Minitest::Test
     check "filename",     file.is_a?(Hash) && file[:filename] == "logo.png"
     check "type",         file.is_a?(Hash) && file[:type] == "image/png"
     check "content",      file.is_a?(Hash) && file[:tempfile].read == "PNGDATA"
+    puts "ALL OK"
+  RUBY
+
+  # A raw-body upload reads `request.content_type` (the full header, like Rack)
+  # to pick the MIME it validates and converts; `media_type` drops parameters.
+  CONTENT_TYPE_DRIVER = <<~'RUBY'
+    require "REQUEST_PATH"
+
+    def check(label, condition)
+      puts "#{condition ? 'ok' : 'FAIL'} #{label}"
+      exit 1 unless condition
+    end
+
+    multipart = Request.new("PUT", "/uploads/proxy/x/y", "", "", { "content-type" => "multipart/form-data; boundary=xyz" })
+    json      = Request.new("POST", "/uploads/direct_upload", "", "", { "content-type" => "application/json" })
+    blank     = Request.new("GET", "/", "", "", {})
+
+    check "content_type keeps params", multipart.content_type == "multipart/form-data; boundary=xyz"
+    check "media_type drops params",  multipart.media_type == "multipart/form-data"
+    check "content_type json",         json.content_type == "application/json"
+    check "content_type nil",          blank.content_type.nil?
     puts "ALL OK"
   RUBY
 

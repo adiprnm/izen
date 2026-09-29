@@ -107,8 +107,15 @@ class Request
     end
   end
 
+  # Full Content-Type header, parameters included (Rack::Request#content_type).
+  # The upload endpoints read this to pick the MIME they validate/convert.
+  def content_type
+    value = header("content-type")
+    value.nil? || value.empty? ? nil : value
+  end
+
   def media_type
-    header("content-type").to_s.split(";", 2).first.to_s.strip
+    header("content-type").to_s.split(";", 2).first.to_s.strip.downcase
   end
 
   def params
