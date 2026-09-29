@@ -146,6 +146,22 @@ class NativeTest < Minitest::Test
     end
   end
 
+  # The native HTTP/SMTP clients verify TLS against the system trust store
+  # (R2, Midtrans, SMTP); debian:bookworm-slim ships no CA bundle, so the
+  # runtime image must install ca-certificates or every HTTPS call fails with
+  # "certificate verify failed".
+  def test_runtime_image_installs_ca_certificates
+    Dir.mktmpdir("izen-native") do |dir|
+      source = scaffold_project(dir)
+      out    = File.join(dir, "native")
+
+      Izen::Native::Generator.new(source, out).run
+
+      dockerfile = File.read(File.join(out, "Dockerfile"))
+      assert_includes dockerfile, "ca-certificates"
+    end
+  end
+
   def test_copies_and_patches_the_source_kamal_config
     Dir.mktmpdir("izen-native") do |dir|
       source = scaffold_project(dir)

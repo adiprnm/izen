@@ -597,8 +597,11 @@ module Izen
           RUN make -C /src -j"$(nproc)" CC=clang
 
           FROM debian:bookworm-slim
+          # ca-certificates is required: the native HTTP/SMTP clients verify TLS
+          # against the system trust store (R2, Midtrans, SMTP), and the slim base
+          # image ships no CA bundle.
           RUN apt-get update -qq \\
-           && apt-get install --no-install-recommends -y libsqlite3-0 libssl3 libcrypt1 libvips-tools \\
+           && apt-get install --no-install-recommends -y ca-certificates libsqlite3-0 libssl3 libcrypt1 libvips-tools \\
            && rm -rf /var/lib/apt/lists/*
           WORKDIR /app
           COPY public/ ./public/
