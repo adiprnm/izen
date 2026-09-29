@@ -6,6 +6,7 @@ require "yaml"
 require_relative "analyzer"
 require_relative "route_compiler"
 require_relative "../cli/kamal"
+require_relative "../cli/native_assets"
 
 module Izen
   module Native
@@ -59,8 +60,8 @@ module Izen
         write_manifest
         write_gemfile
         write_rakefile
-        write_docker
-        write_kamal
+        write_dockerignore
+        ensure_native_assets
         @out
       end
 
@@ -590,141 +591,37 @@ module Izen
         RUBY
       end
 
-      def write_docker
-        File.write(File.join(@out, "Dockerfile"), <<~DOCKER)
-          # syntax=docker/dockerfile:1
-          # Build the Spinel binary from the packed C sources, then ship a minimal
-          # runtime image. Build context is this directory; run `spin pack` first.
-          FROM debian:bookworm-slim AS build
-          RUN apt-get update -qq \\
-           && apt-get install --no-install-recommends -y clang make libsqlite3-dev libssl-dev libcrypt-dev \\
-           && rm -rf /var/lib/apt/lists/*
-          COPY pack /src
-          RUN make -C /src clean || true
-          RUN make -C /src -j"$(nproc)" CC=clang
-
-          FROM debian:bookworm-slim
-          # ca-certificates is required: the native HTTP/SMTP clients verify TLS
-          # against the system trust store (R2, Midtrans, SMTP), and the slim base
-          # image ships no CA bundle.
-          RUN apt-get update -qq \\
-           && apt-get install --no-install-recommends -y ca-certificates libsqlite3-0 libssl3 libcrypt1 libvips-tools \\
-           && rm -rf /var/lib/apt/lists/*
-          WORKDIR /app
-          COPY public/ ./public/
-          COPY db/ ./db/
-          COPY --from=build /src/serve ./serve
-          RUN useradd --uid 1001 --create-home app \\
-           && mkdir -p storage \\
-           && chown -R app:app /app
-          USER app
-          VOLUME /app/storage
-          ENV APP_ENV=production
-          ENV PORT=3000
-          ENV SPINEL_WORKERS=2
-          EXPOSE 3000
-          CMD ["./serve"]
-        DOCKER
-
-        File.write(File.join(@out, ".dockerignore"), <<~IGNORE)
-          build/
-          storage/
-          test/
-          vendor/
-          app/
-          generated/
-          runtime/
-          spinel/
-          bin/
-          *.md
-          spin.lock
-          pack/**/*.o
-        IGNORE
+      def write_dockerignore
+        File.write(File.join(@out, ".dockerignore"), Izen::Cli::NativeAssets.dockerignore)
       end
 
-      # Kamal deploy config for the native binary. The source app's
-      # config/deploy.yml is reused when present (it holds the real servers,
-      # host and registry); otherwise a working default is generated. Either way
-      # the proxy port is pinned to 3000 to match the generated Dockerfile, and
-      # an empty .kamal/secrets is written so `kamal deploy` can start.
-      def write_kamal
-        FileUtils.mkdir_p(File.join(@out, "config"))
-        File.write(File.join(@out, "config", "deploy.yml"), native_deploy_yml)
-        copy_deploy_destinations
-
-        FileUtils.mkdir_p(File.join(@out, ".kamal"))
-        write_kamal_secrets
-        copy_kamal_extras
+      # The Dockerfile and the native Kamal config are project artifacts (they
+      # live at the project root, next to the CRuby config), not generated build
+      # output, so they survive `rm -rf native/` and can be versioned. `izen new`
+      # scaffolds them; here we fill in defaults for projects created before
+      # they existed. Never clobber a file the user may have edited.
+      def ensure_native_assets
+        write_if_missing(File.join(@source, "Dockerfile.native"), Izen::Cli::NativeAssets.dockerfile)
+        write_if_missing(
+          File.join(@source, "config", "deploy.native.yml"),
+          Izen::Cli::Kamal.deploy_native_yml(@name, context: context_path)
+        )
+        write_if_missing(File.join(@source, ".kamal", "secrets-common"), Izen::Cli::Kamal.secrets(@name))
       end
 
-      # Kamal destination overrides (`config/deploy.staging.yml`, ...) sit next
-      # to the base config and are merged on top of it by `kamal deploy -d
-      # <name>`. Copy them through so a native staging deploy keeps its own
-      # service/image/host/volume instead of reusing the production ones.
-      def copy_deploy_destinations
-        Dir[File.join(@source, "config", "deploy.*.yml")].each do |path|
-          FileUtils.cp(path, File.join(@out, "config", File.basename(path)))
-        end
+      # The `native/` build context as Kamal should see it: relative to the
+      # project root (where `kamal` is run) when the output lives inside it.
+      def context_path
+        return @out.sub("#{@source}/", "") if @out.start_with?("#{@source}/")
+
+        @out
       end
 
-      def native_deploy_yml
-        deploy = File.join(@source, "config", "deploy.yml")
-        text   = File.file?(deploy) ? File.read(deploy) : Izen::Cli::Kamal.deploy_yml(@name)
+      def write_if_missing(path, content)
+        return if File.file?(path)
 
-        ensure_builder_context(patch_proxy_port(text))
-      end
-
-      # The native server listens on 3000 (the Dockerfile sets PORT), while the
-      # source config targets the CRuby server on 80.
-      def patch_proxy_port(text)
-        text = text.gsub(/^(\s*)#\s*app_port:\s*\d+\s*$/, '\1app_port: 3000')
-        return text if text.include?("app_port: 3000")
-
-        text.sub(/^(proxy:\s*\n)/, "\\1  app_port: 3000\n")
-      end
-
-      # The native build context (Dockerfile + pack/) is generated and
-      # gitignored, so Kamal must build from the working tree. Setting `context`
-      # explicitly also disables Kamal's git clone, which would otherwise drop
-      # pack/ and fail the build.
-      def ensure_builder_context(text)
-        return text if text.match?(/^\s*context:\s/)
-
-        if text.match?(/^builder:\s*$/)
-          text.sub(/^(builder:\s*\n)/, "\\1  context: \".\"\n")
-        else
-          "#{text}\n# Native builds use the generated working tree as the build context.\nbuilder:\n  context: \".\"\n"
-        end
-      end
-
-      # Shared secrets live in `.kamal/secrets-common`: Kamal reads that file
-      # for every deploy, with or without a destination, whereas `.kamal/secrets`
-      # is ignored once `-d <destination>` is passed.
-      def write_kamal_secrets
-        source = [ File.join(@source, ".kamal", "secrets-common"), File.join(@source, ".kamal", "secrets") ].find { |path| File.file?(path) }
-        target = File.join(@out, ".kamal", "secrets-common")
-        if source
-          FileUtils.cp(source, target)
-        else
-          File.write(target, Izen::Cli::Kamal.secrets(@name))
-        end
-      end
-
-      # Any other files the source app keeps under .kamal/ (hooks, keys,
-      # destination secrets like `secrets.staging`, ...) are copied through
-      # untouched.
-      def copy_kamal_extras
-        kamal = File.join(@source, ".kamal")
-        return unless File.directory?(kamal)
-
-        Dir[File.join(kamal, "**", "*")].each do |path|
-          next if File.directory?(path) || File.basename(path) == "secrets"
-
-          relative = path.sub("#{kamal}/", "")
-          target   = File.join(@out, ".kamal", relative)
-          FileUtils.mkdir_p(File.dirname(target))
-          FileUtils.cp(path, target)
-        end
+        FileUtils.mkdir_p(File.dirname(path))
+        File.write(path, content)
       end
 
       def indent(text, spaces)

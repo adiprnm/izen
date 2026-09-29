@@ -84,8 +84,8 @@ class NativeTest < Minitest::Test
       assert File.file?(File.join(out, "generated", "routes.rb"))
       assert File.file?(File.join(out, "spinel", "sqlite_shim.c"))
       assert File.file?(File.join(out, "db", "schema.sql"))
-      assert File.file?(File.join(out, "config", "deploy.yml"))
-      assert File.file?(File.join(out, ".kamal", "secrets-common"))
+      assert File.file?(File.join(source, "Dockerfile.native"))
+      assert File.file?(File.join(source, "config", "deploy.native.yml"))
 
       assert_includes File.read(File.join(out, "generated", "models.rb")), "class Model < Base::Model"
       assert_includes File.read(File.join(out, "generated", "routes.rb")), 'r.segments[0] == "widgets"'
@@ -119,43 +119,43 @@ class NativeTest < Minitest::Test
     end
   end
 
-  def test_generates_a_default_kamal_config_when_the_source_has_none
+  def test_generates_native_artifacts_when_the_source_has_none
     Dir.mktmpdir("izen-native") do |dir|
       source = scaffold_project(dir)
-      out    = File.join(dir, "native")
-      FileUtils.rm_f(File.join(source, "config", "deploy.yml"))
+      out    = File.join(source, "native")
+      FileUtils.rm_f(File.join(source, "Dockerfile.native"))
+      FileUtils.rm_f(File.join(source, "config", "deploy.native.yml"))
       FileUtils.rm_rf(File.join(source, ".kamal"))
 
       Izen::Native::Generator.new(source, out).run
 
-      deploy = File.read(File.join(out, "config", "deploy.yml"))
-      assert_includes deploy, "service: demo"
+      deploy = File.read(File.join(source, "config", "deploy.native.yml"))
+      assert_includes deploy, "service: demo-native"
       assert_includes deploy, "app_port: 3000"
-      assert_includes deploy, "demo_storage:/app/storage"
+      assert_includes deploy, "demo_native_storage:/app/storage"
+      assert_includes deploy, 'context: "native"'
+      assert_includes deploy, 'dockerfile: "Dockerfile.native"'
 
-      assert_includes File.read(File.join(out, ".kamal", "secrets-common")), "SESSION_SECRET=$SESSION_SECRET"
+      assert File.file?(File.join(source, "Dockerfile.native"))
+      assert_includes File.read(File.join(source, ".kamal", "secrets-common")), "SESSION_SECRET=$SESSION_SECRET"
     end
   end
 
-  def test_copies_kamal_destination_configs
+  # `native/` (pack/) is git-ignored, so the native Kamal config must pin the
+  # build context explicitly; otherwise Kamal clones the repo and finds no
+  # context to build. The context tracks the requested --out directory.
+  def test_native_kamal_config_pins_the_build_context
     Dir.mktmpdir("izen-native") do |dir|
       source = scaffold_project(dir)
-      out    = File.join(dir, "native")
-      File.write(File.join(source, "config", "deploy.staging.yml"), <<~YAML)
-        image: demo-staging
-        proxy:
-          host: staging.example.com
-        volumes:
-          - "demo_staging_storage:/app/storage"
-      YAML
+      out    = File.join(source, "build", "native")
+      FileUtils.rm_f(File.join(source, "config", "deploy.native.yml"))
 
       Izen::Native::Generator.new(source, out).run
 
-      staging = File.read(File.join(out, "config", "deploy.staging.yml"))
-      assert_includes staging, "staging.example.com"
-      assert_includes staging, "demo_staging_storage:/app/storage"
-      # Kamal only reads `.kamal/secrets-common` once a destination is passed.
-      assert File.file?(File.join(out, ".kamal", "secrets-common"))
+      deploy = File.read(File.join(source, "config", "deploy.native.yml"))
+      assert_includes deploy, "app_port: 3000"
+      assert_includes deploy, 'context: "build/native"'
+      assert_includes deploy, 'dockerfile: "Dockerfile.native"'
     end
   end
 
@@ -170,59 +170,8 @@ class NativeTest < Minitest::Test
 
       Izen::Native::Generator.new(source, out).run
 
-      dockerfile = File.read(File.join(out, "Dockerfile"))
+      dockerfile = File.read(File.join(source, "Dockerfile.native"))
       assert_includes dockerfile, "ca-certificates"
-    end
-  end
-
-  def test_copies_and_patches_the_source_kamal_config
-    Dir.mktmpdir("izen-native") do |dir|
-      source = scaffold_project(dir)
-      out    = File.join(dir, "native")
-      File.write(File.join(source, "config", "deploy.yml"), <<~YAML)
-        service: custom
-        servers:
-          web:
-            - 10.0.0.1
-        proxy:
-          ssl: true
-          host: custom.example.com
-      YAML
-
-      Izen::Native::Generator.new(source, out).run
-
-      deploy = File.read(File.join(out, "config", "deploy.yml"))
-      assert_includes deploy, "service: custom"
-      assert_includes deploy, "10.0.0.1"
-      assert_includes deploy, "custom.example.com"
-      assert_includes deploy, "  app_port: 3000"
-    end
-  end
-
-  # `native/` (Dockerfile + pack/) is git-ignored, so the native Kamal config
-  # must pin the build context; otherwise Kamal clones the repo and finds no
-  # context to build.
-  def test_native_kamal_config_pins_the_build_context
-    Dir.mktmpdir("izen-native") do |dir|
-      source = scaffold_project(dir)
-      out    = File.join(dir, "native")
-      File.write(File.join(source, "config", "deploy.yml"), <<~YAML)
-        service: custom
-        servers:
-          web:
-            - 10.0.0.1
-        proxy:
-          ssl: true
-          host: custom.example.com
-        builder:
-          arch: amd64
-      YAML
-
-      Izen::Native::Generator.new(source, out).run
-
-      deploy = File.read(File.join(out, "config", "deploy.yml"))
-      assert_includes deploy, "app_port: 3000"
-      assert_includes deploy, 'context: "."'
     end
   end
 

@@ -123,12 +123,16 @@ izen module new post title:string body:text    # scaffold a domain module
 `izen new` writes a runnable Roda + SQLite skeleton: `app.rb`, `config.ru`,
 `config/database.yaml`, `views/layout.erb`, `Rakefile`, `README.md`,
 `.env.example`, a smoke test, and the `app/`, `migrations/` and `storage/`
-directories. It also scaffolds a Kamal deploy setup — `config/deploy.yml` and
-`.kamal/secrets-common` — for the native build (see [Kamal deployment](#kamal-deployment)).
+directories. It also scaffolds a Kamal deploy setup — `config/deploy.yml`
+(CRuby), `config/deploy.native.yml` and `Dockerfile.native` (native) and
+`.kamal/secrets-common` — for the native build (see
+[Kamal deployment](#kamal-deployment)).
 The generated `.gitignore` ignores Bundler caches, local `.env` files (keeping
-`.env.example`), the local `config/deploy*.yml` and `.kamal/`, `/log/`, `/tmp/`
-and `/coverage/`, the SQLite databases and session secret under `storage/`,
-Spinel's `native/` build output, and editor/OS noise. Pass `--force` to scaffold
+`.env.example`), the local CRuby `config/deploy.yml` and `.kamal/`, `/log/`,
+`/tmp/` and `/coverage/`, the SQLite databases and session secret under
+`storage/`, Spinel's `native/` build output, and editor/OS noise. The native
+deploy template (`config/deploy.native.yml`) and `Dockerfile.native` are kept
+tracked. Pass `--force` to scaffold
 into a non-empty directory or `--no-test` to skip the test files.
 
 `izen module new` writes `app/<name>/{model,contract,repository,controller}.rb`,
@@ -279,36 +283,52 @@ The generated runtime is written to Spinel's subset. A few non-obvious rules
 
 ## Kamal deployment
 
-Both `izen new` and `izen native build` write a Kamal deploy config so the
-native binary can ship with no extra setup:
+`izen new` scaffolds three deploy files so the app ships with no extra setup:
 
-- `izen new` scaffolds `config/deploy.yml` (service, image, proxy with
-  `app_port: 3000`, a local registry, the `SESSION_SECRET` /
-  `APP_ENCRYPTION_KEY` secrets and a `<name>_storage:/app/storage` volume) and
-  an empty `.kamal/secrets-common` that reads those secrets from the environment.
-- `izen native build` copies the app's `config/deploy.yml` into the generated
-  `native/` project (patching the proxy port to 3000 and pinning the build
-  context, since `native/` is git-ignored), along with any
-  `config/deploy.<destination>.yml`, and carries `.kamal/` over.
+- `config/deploy.yml` — the CRuby (Roda/Puma) Kamal config, git-ignored like
+  any local deploy config.
+- `config/deploy.native.yml` — a standalone Kamal config for the native binary,
+  tracked in the repository. Its `builder` block pins `context: "native"`
+  (the generated build directory that holds `pack/`) and
+  `dockerfile: "Dockerfile.native"`.
+- `Dockerfile.native` — the native image, tracked at the project root next to
+  the app's own `Dockerfile`. It builds the Spinel binary from `native/pack`
+  and ships a minimal runtime image.
 
-Fill in the placeholder server, host and image, export the secrets, then deploy
-from the directory that holds the Dockerfile and the `pack/` build context:
+`.kamal/secrets-common` (git-ignored) reads `SESSION_SECRET` /
+`APP_ENCRYPTION_KEY` from the environment for both configs.
+
+Fill in the placeholder server, host and image, then build and deploy the
+native binary **from the project root** (Kamal resolves `Dockerfile.native`
+relative to the working directory and `native/` as the build context):
 
 ```sh
 izen native build
-cd native
 export SESSION_SECRET=$(openssl rand -hex 32)
 export APP_ENCRYPTION_KEY=$(openssl rand -hex 32)
-kamal setup      # first time
-kamal deploy     # afterwards
+izen native deploy setup      # first time
+izen native deploy            # afterwards
 ```
 
-The SQLite database and the persisted session secret live on the
-`<name>_storage` volume mounted at `/app/storage`, so redeploys keep their data.
-To run a second environment (e.g. staging) with its own host, image and volume,
-add `config/deploy.staging.yml` and deploy with `kamal deploy -d staging`.
-`config/deploy*.yml` and `.kamal/` are git-ignored (they hold server details and
-secrets); keep them on disk.
+`izen native deploy` runs `kamal -c config/deploy.native.yml` and forwards
+anything you pass to Kamal (`setup`, `redeploy`, `-d staging`, ...). Use
+`izen native kamal <args>` for any other Kamal command (e.g.
+`izen native kamal app logs`).
+
+`izen native build` lowers the app to a Spinel project in `native/` and writes
+`Dockerfile.native` / `config/deploy.native.yml` if they are missing (existing
+projects upgrade transparently; your edits are never overwritten). The SQLite
+database and the persisted session secret live on the `<name>_native_storage`
+volume mounted at `/app/storage`, so redeploys keep their data. The native
+service is named `<name>-native` so it can coexist with the CRuby service.
+
+To run a second native environment (say staging) with its own host, image and
+volume, add `config/deploy.native.staging.yml` and deploy with
+`izen native deploy -d staging`.
+
+The CRuby `config/deploy.yml` and `.kamal/` are git-ignored (they hold server
+details and secrets); `config/deploy.native.yml` and `Dockerfile.native` are
+tracked templates. Keep the real secrets on disk.
 
 ## License
 

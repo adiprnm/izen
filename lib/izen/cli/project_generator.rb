@@ -5,6 +5,7 @@ require "fileutils"
 
 require_relative "style"
 require_relative "kamal"
+require_relative "native_assets"
 
 module Izen
   module Cli
@@ -62,6 +63,8 @@ module Izen
         end
 
         write("config/deploy.yml", Kamal.deploy_yml(@name))
+        write("config/deploy.native.yml", Kamal.deploy_native_yml(@name))
+        write("Dockerfile.native", NativeAssets.dockerfile)
         write(".kamal/secrets-common", Kamal.secrets(@name))
 
         summary
@@ -106,8 +109,9 @@ module Izen
         puts "  #{Style.step('bundle exec izen migration migrate')}"
         puts "  #{Style.step('bundle exec izen dev')}"
         puts
-        puts "Kamal deploy config written to #{Style.path('config/deploy.yml')} " \
-             "(secrets in #{Style.path('.kamal/secrets-common')})."
+        puts "Kamal deploy config written to #{Style.path('config/deploy.yml')} (CRuby) " \
+             "and #{Style.path('config/deploy.native.yml')} (native), " \
+             "with secrets in #{Style.path('.kamal/secrets-common')}."
       end
     end
   end

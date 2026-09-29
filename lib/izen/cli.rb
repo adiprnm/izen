@@ -217,6 +217,15 @@ module Izen
     # Handles `native <command> [args]` — lowering the app to a Spinel `spin`
     # project and building the native binary.
     def run_native(action, argv)
+      # Deploying only shells out to Kamal, so it must not require the lowering
+      # gems (prism/erubi).
+      case action
+      when "deploy"
+        return native_deploy(argv)
+      when "kamal"
+        return native_kamal(argv)
+      end
+
       require_native!
 
       case action
@@ -306,6 +315,68 @@ module Izen
       puts Style.removed(relative(options[:out]))
     end
 
+    # `izen native deploy [kamal args...]`: deploy the native binary with the
+    # native Kamal config. With no arguments it runs the `deploy` subcommand;
+    # anything else (`setup`, `redeploy`, `-d staging`, ...) is forwarded to
+    # Kamal verbatim.
+    #
+    #   izen native deploy
+    #   izen native deploy setup
+    #   izen native deploy -d staging redeploy
+    def native_deploy(argv)
+      native_kamal(native_deploy_args(argv))
+    end
+
+    # The Kamal argv `native deploy` forwards: `deploy` unless the caller named
+    # a subcommand (or flags, which Kamal defaults to `deploy` for).
+    def native_deploy_args(argv)
+      argv.empty? ? [ "deploy" ] : argv
+    end
+
+    # `izen native kamal <args...>`: raw Kamal escape hatch bound to the native
+    # config, for commands `native deploy` does not wrap.
+    #
+    #   izen native kamal app logs
+    #   izen native kamal config
+    def native_kamal(argv)
+      config  = "config/deploy.native.yml"
+      unless File.file?(File.join(root, config))
+        abort Style.error("no #{config} found — run `izen new` or `izen native build` first")
+      end
+
+      command = native_kamal_command(argv)
+      puts Style.dim("$ #{command.join(' ')}")
+      result  = run_kamal(command)
+
+      if result.nil?
+        abort Style.error("could not run `kamal` — is it installed and on PATH?")
+      elsif !result
+        abort Style.error("kamal exited with status #{$?.exitstatus}")
+      end
+    end
+
+    # The argv `native deploy`/`native kamal` drive. Kept separate so it can be
+    # asserted without spawning Kamal. When the app bundles Kamal, run it under
+    # `bundle exec` so its pinned version is used; otherwise leave it to the
+    # `kamal` on PATH.
+    def native_kamal_command(argv, config: "config/deploy.native.yml")
+      prefix = []
+      prefix << "bundle" << "exec" if File.file?(File.join(root, "Gemfile")) && bundled?("kamal")
+      prefix + [ "kamal", "-c", config, *argv ]
+    end
+
+    # Spawns Kamal from the app root. A plain `kamal` binstub inherits
+    # `bundle exec izen`'s Bundler environment and refuses to load a gem that
+    # isn't in the app's bundle, so run it unbundled when we are not explicitly
+    # nesting `bundle exec`.
+    def run_kamal(command)
+      if command.first == "bundle" || !defined?(Bundler)
+        system(*command, chdir: root)
+      else
+        Bundler.with_unbundled_env { system(*command, chdir: root) }
+      end
+    end
+
     def builder(options)
       Native::Builder.new(
         source:     options[:source],
@@ -328,6 +399,8 @@ module Izen
         help_entry("native pack", "generate --spinel and run `spin pack`"),
         help_entry("native run", "generate (CRuby) and boot bin/serve.rb"),
         help_entry("native clean", "remove the generated directory"),
+        help_entry("native deploy [ARGS]", "deploy the native binary with Kamal"),
+        help_entry("native kamal ARGS", "run any Kamal command against the native config"),
         "",
         Style.heading("Options:"),
         help_flag("--source PATH", "app root (default: #{root})"),
@@ -344,7 +417,9 @@ module Izen
         Style.heading("Examples:"),
         "  #{Style.command('izen native generate --spinel')}",
         "  #{Style.command('izen native build --spinel-bin ~/tools/spinel/bin')}",
-        "  #{Style.command('izen native run --port 3000')}"
+        "  #{Style.command('izen native run --port 3000')}",
+        "  #{Style.command('izen native deploy setup')}",
+        "  #{Style.command('izen native deploy -d staging')}"
       ].join("\n")
     end
 
@@ -535,6 +610,7 @@ module Izen
         help_entry("native pack", "produce the C-only pack directory"),
         help_entry("native run", "boot the generated app on CRuby"),
         help_entry("native clean", "remove the generated directory"),
+        help_entry("native deploy", "deploy the native binary with Kamal"),
         "",
         Style.heading("New options:"),
         help_flag("--no-test", "skip test files"),

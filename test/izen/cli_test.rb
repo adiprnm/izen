@@ -63,6 +63,8 @@ class CliTest < TestSupport::DatabaseTest
     assert File.file?(File.join(project, "Rakefile"))
     assert File.file?(File.join(project, "config", "database.yaml"))
     assert File.file?(File.join(project, "config", "deploy.yml"))
+    assert File.file?(File.join(project, "config", "deploy.native.yml"))
+    assert File.file?(File.join(project, "Dockerfile.native"))
     assert File.file?(File.join(project, ".kamal", "secrets-common"))
     assert File.file?(File.join(project, "views", "layout.erb"))
     assert File.file?(File.join(project, "test", "test_helper.rb"))
@@ -79,6 +81,7 @@ class CliTest < TestSupport::DatabaseTest
     assert_includes gitignore, "!.env.example"
     assert_includes gitignore, "/native/"
     assert_includes gitignore, "/config/deploy*.yml"
+    assert_includes gitignore, "!/config/deploy.native.yml"
     assert_includes gitignore, "/.kamal/"
 
     deploy = File.read(File.join(project, "config", "deploy.yml"))
@@ -86,13 +89,22 @@ class CliTest < TestSupport::DatabaseTest
     assert_includes deploy, "app_port: 3000"
     assert_includes deploy, "blog_storage:/app/storage"
 
+    native = File.read(File.join(project, "config", "deploy.native.yml"))
+    assert_includes native, "service: blog-native"
+    assert_includes native, "app_port: 3000"
+    assert_includes native, 'context: "native"'
+    assert_includes native, 'dockerfile: "Dockerfile.native"'
+    assert_includes native, "blog_native_storage:/app/storage"
+
+    assert_includes File.read(File.join(project, "Dockerfile.native")), "ca-certificates"
+
     secrets = File.read(File.join(project, ".kamal", "secrets-common"))
     assert_includes secrets, "SESSION_SECRET=$SESSION_SECRET"
     assert_includes secrets, "APP_ENCRYPTION_KEY=$APP_ENCRYPTION_KEY"
 
     readme = File.read(File.join(project, "README.md"))
     assert_includes readme, "## Deploy (Kamal)"
-    assert_includes readme, "blog_storage"
+    assert_includes readme, "blog_native_storage"
 
     app = File.read(File.join(project, "app.rb"))
     assert_includes app, "class App < Izen::Application"
@@ -261,6 +273,45 @@ class CliTest < TestSupport::DatabaseTest
     error = assert_raises(SystemExit) { quiet_errors { Izen::Cli.scaffold("posts", []) } }
     refute_equal 0, error.status
     refute File.exist?(File.join(dir, "app", "posts"))
+  ensure
+    Izen.root = previous
+    FileUtils.remove_entry(dir)
+  end
+
+  def test_native_deploy_builds_the_kamal_command_for_the_native_config
+    assert_equal %w[kamal -c config/deploy.native.yml deploy],
+      Izen::Cli.native_kamal_command(Izen::Cli.native_deploy_args([]))
+  end
+
+  def test_native_deploy_forwards_subcommands_and_destinations
+    assert_equal %w[kamal -c config/deploy.native.yml setup],
+      Izen::Cli.native_kamal_command(Izen::Cli.native_deploy_args(%w[setup]))
+    assert_equal %w[kamal -c config/deploy.native.yml -d staging redeploy],
+      Izen::Cli.native_kamal_command(Izen::Cli.native_deploy_args(%w[-d staging redeploy]))
+  end
+
+  def test_native_kamal_prefers_bundle_exec_when_the_app_bundles_kamal
+    dir       = Dir.mktmpdir("izen-native-deploy")
+    previous  = Izen.root
+    Izen.root = dir
+    File.write(File.join(dir, "Gemfile"), "source 'https://rubygems.org'\ngem 'kamal'\n")
+
+    assert_equal %w[bundle exec kamal -c config/deploy.native.yml deploy],
+      Izen::Cli.native_kamal_command(Izen::Cli.native_deploy_args([]))
+  ensure
+    Izen.root = previous
+    FileUtils.remove_entry(dir)
+  end
+
+  def test_native_kamal_aborts_when_the_native_config_is_missing
+    dir       = Dir.mktmpdir("izen-native-deploy")
+    previous  = Izen.root
+    Izen.root = dir
+
+    error = assert_raises(SystemExit) do
+      quiet_errors { Izen::Cli.native_kamal(%w[config]) }
+    end
+    refute_equal 0, error.status
   ensure
     Izen.root = previous
     FileUtils.remove_entry(dir)

@@ -8,7 +8,9 @@
 !.env.example
 
 # Kamal deploy config (kept locally; contains server/registry details and secrets)
+# except the native config, which is a tracked, self-contained template.
 /config/deploy*.yml
+!/config/deploy.native.yml
 /.kamal/
 
 # Logs, temp files and test coverage
@@ -23,7 +25,8 @@
 /storage/*.sqlite3-*
 /storage/session_secret
 
-# Spinel native build output (`izen native ...`)
+# Spinel native build output (`izen native ...`); the Dockerfile.native and
+# config/deploy.native.yml that drive it live at the project root instead.
 /native/
 
 # Editor and OS noise
