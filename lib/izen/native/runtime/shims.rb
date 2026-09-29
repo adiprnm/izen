@@ -1367,25 +1367,18 @@ module Izen
 end
 
 module Base
-  # Background job base, lowered from `Izen::Base::Job`. A single worker thread
-  # drains a shared queue (the native equivalent of the gem's worker), so
-  # `perform_later`/`run` return immediately and the work happens off the
-  # request. `JOBS_INLINE=1` keeps everything synchronous for tests.
+  # Background job base, lowered from `Izen::Base::Job`. Spinel's worker-thread
+  # path is not stable for a subclass's `perform_later` (it segfaults), so jobs
+  # run inline in the calling thread. Every entry point executes the work —
+  # there is no queue that could silently drop it.
   class Job
-    @queue   = Queue.new
-    @inline  = false
-    @worker  = nil
-    @mutex   = Mutex.new
-
     class << self
-      attr_writer :inline
-
       def inline?
-        @inline || ENV["JOBS_INLINE"] == "1"
+        true
       end
 
       def run(&block)
-        enqueue(&block)
+        block.call
         nil
       end
 
@@ -1394,38 +1387,12 @@ module Base
       end
 
       def perform_later(*args, **kwargs)
-        enqueue { new.perform(*args, **kwargs) }
-        nil
+        new.perform(*args, **kwargs)
       end
 
       def enqueue(&block)
-        if inline?
-          block.call
-          return nil
-        end
-
-        @queue << block
-        ensure_worker
+        block.call
         nil
-      end
-
-      private
-
-      def ensure_worker
-        @mutex.synchronize do
-          return if @worker && @worker.alive?
-
-          @worker = Thread.new do
-            loop do
-              task = @queue.pop
-              begin
-                task.call
-              rescue StandardError => e
-                warn "[Job] #{e.class}: #{e.message}"
-              end
-            end
-          end
-        end
       end
     end
 
@@ -1435,8 +1402,8 @@ module Base
   end
 
   # Transactional mailer base, lowered from `Izen::Base::Mailer`. Builds a
-  # Mail::Message; `deliver_now` sends it over the SMTP client above and
-  # `deliver_later` enqueues it on the background worker.
+  # Mail::Message; `deliver_now` and `deliver_later` both send it over the SMTP
+  # client above (Spinel cannot carry a Mailer-typed closure through a worker).
   class Mailer
     class << self
       attr_writer :delivery_method
@@ -1446,11 +1413,15 @@ module Base
       end
 
       def deliver_now(name, *args)
-        new.deliver_now(name, *args)
+        mailer = new
+        mailer.dispatch_delivery(name, args, false)
+        mailer
       end
 
       def deliver_later(name, *args)
-        new.deliver_later(name, *args)
+        mailer = new
+        mailer.dispatch_delivery(name, args, true)
+        mailer
       end
 
       def smtp_options
@@ -1490,19 +1461,29 @@ module Base
     end
 
     def deliver_now(name, *args)
-      message = self.public_send(name, *args)
-      return nil unless message
-
-      deliver_message(message)
-      message
+      dispatch_delivery(name, args, false)
     end
 
     def deliver_later(name, *args)
-      message = self.public_send(name, *args)
-      return nil unless message
+      dispatch_delivery(name, args, true)
+    end
 
-      Base::Job.run { deliver_message(message) }
-      message
+    # Builds the message for `name` and sends it. A distinct method name keeps
+    # Spinel from typing the return as the receiver class.
+    def dispatch_delivery(name, args, later)
+      message = self.public_send(name, *args)
+      return false if message.nil?
+
+      if later
+        begin
+          deliver_message(message)
+        rescue StandardError => e
+          warn "[Mailer] #{e.class}: #{e.message}"
+        end
+      else
+        deliver_message(message)
+      end
+      true
     end
 
     private
