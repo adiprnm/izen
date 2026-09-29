@@ -66,13 +66,21 @@ class SqliteAdapter
   def transaction
     @monitor.synchronize do
       execute("BEGIN")
-      result = yield
-      execute("COMMIT")
-      result
+      begin
+        result = yield
+        execute("COMMIT")
+        result
+      rescue StandardError
+        # Release the write lock even when the block failed. A failing
+        # ROLLBACK must not mask the original error.
+        begin
+          execute("ROLLBACK")
+        rescue StandardError
+          nil
+        end
+        raise
+      end
     end
-  rescue StandardError
-    execute("ROLLBACK")
-    raise
   end
 
   def execute_batch(sql)
@@ -88,14 +96,21 @@ class SqliteAdapter
   def run(sql, params)
     stmt = prepare(sql, params)
     rows = []
-    loop do
-      code = Sqlite.shim_step(stmt)
-      break if code == Sqlite::DONE
-      raise Sqlite.shim_errmsg(@db) unless code == Sqlite::ROW
+    begin
+      loop do
+        code = Sqlite.shim_step(stmt)
+        break if code == Sqlite::DONE
+        raise Sqlite.shim_errmsg(@db) unless code == Sqlite::ROW
 
-      rows << current_row(stmt)
+        rows << current_row(stmt)
+      end
+    ensure
+      # Always finalize. A statement left open after a failed step (a busy
+      # SQLITE_BUSY, say) keeps its lock on the database and makes every later
+      # COMMIT fail with "SQL statements in progress", poisoning the
+      # connection for the rest of the process's life.
+      Sqlite.shim_finalize(stmt)
     end
-    Sqlite.shim_finalize(stmt)
     rows
   end
 
