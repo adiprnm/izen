@@ -279,15 +279,24 @@ class CliTest < TestSupport::DatabaseTest
   end
 
   def test_native_deploy_builds_the_kamal_command_for_the_native_config
-    assert_equal %w[kamal -c config/deploy.native.yml deploy],
+    assert_equal %w[kamal deploy -c config/deploy.native.yml],
       Izen::Cli.native_kamal_command(Izen::Cli.native_deploy_args([]))
   end
 
   def test_native_deploy_always_runs_the_deploy_subcommand_with_the_given_options
-    assert_equal %w[kamal -c config/deploy.native.yml deploy -d staging],
+    assert_equal %w[kamal deploy -c config/deploy.native.yml -d staging],
       Izen::Cli.native_kamal_command(Izen::Cli.native_deploy_args(%w[-d staging]))
-    assert_equal %w[kamal -c config/deploy.native.yml deploy --skip-push],
+    assert_equal %w[kamal deploy -c config/deploy.native.yml --skip-push],
       Izen::Cli.native_kamal_command(Izen::Cli.native_deploy_args(%w[--skip-push]))
+  end
+
+  # Kamal rejects `-c` before the command, so it has to land right after the
+  # command name (`kamal app -c <file> details`, never `kamal -c <file> app ...`).
+  def test_native_kamal_slots_the_config_after_the_command
+    assert_equal %w[kamal app -c config/deploy.native.yml details],
+      Izen::Cli.native_kamal_command(%w[app details])
+    assert_equal %w[kamal app -c config/deploy.native.yml exec echo hi],
+      Izen::Cli.native_kamal_command(%w[app exec echo hi])
   end
 
   def test_native_kamal_prefers_bundle_exec_when_the_app_bundles_kamal
@@ -296,7 +305,7 @@ class CliTest < TestSupport::DatabaseTest
     Izen.root = dir
     File.write(File.join(dir, "Gemfile"), "source 'https://rubygems.org'\ngem 'kamal'\n")
 
-    assert_equal %w[bundle exec kamal -c config/deploy.native.yml deploy],
+    assert_equal %w[bundle exec kamal deploy -c config/deploy.native.yml],
       Izen::Cli.native_kamal_command(Izen::Cli.native_deploy_args([]))
   ensure
     Izen.root = previous

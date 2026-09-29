@@ -339,7 +339,7 @@ module Izen
     # config, for commands `native deploy` does not wrap.
     #
     #   izen native kamal app logs
-    #   izen native kamal -d staging setup
+    #   izen native kamal setup -d staging
     #   izen native kamal config
     def native_kamal(argv)
       config  = "config/deploy.native.yml"
@@ -362,10 +362,22 @@ module Izen
     # asserted without spawning Kamal. When the app bundles Kamal, run it under
     # `bundle exec` so its pinned version is used; otherwise leave it to the
     # `kamal` on PATH.
+    #
+    # Kamal (Thor) does not accept the class-level `-c/--config-file` before the
+    # command: `kamal -c X deploy` just prints the command's help, while
+    # `kamal deploy -c X` runs it. Slot the config in right after the command
+    # name (before its own arguments) so both plain and namespaced commands
+    # (`deploy`, `app details`, ...) load it.
     def native_kamal_command(argv, config: "config/deploy.native.yml")
       prefix = []
       prefix << "bundle" << "exec" if File.file?(File.join(root, "Gemfile")) && bundled?("kamal")
-      prefix + [ "kamal", "-c", config, *argv ]
+
+      command = if argv.empty?
+        [ "kamal", "-c", config ]
+      else
+        [ "kamal", argv.first, "-c", config, *argv.drop(1) ]
+      end
+      prefix + command
     end
 
     # Spawns Kamal from the app root. A plain `kamal` binstub inherits
