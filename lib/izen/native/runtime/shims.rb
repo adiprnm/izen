@@ -1367,18 +1367,31 @@ module Izen
 end
 
 module Base
-  # Background job base, lowered from `Izen::Base::Job`. Spinel's worker-thread
-  # path is not stable for a subclass's `perform_later` (it segfaults), so jobs
-  # run inline in the calling thread. Every entry point executes the work —
-  # there is no queue that could silently drop it.
+  # Background job base, lowered from `Izen::Base::Job`. A single worker thread
+  # drains a shared queue, so `perform_later`/`run` return immediately and the
+  # work happens off the request. `JOBS_INLINE=1` (or `inline = true`) runs
+  # everything synchronously for tests.
+  #
+  # The queue is a CONSTANT on purpose: Spinel loses the `Queue` type when it
+  # lives in a class ivar and is read inside the worker thread (`pop` then
+  # fails), while a constant keeps it. `perform_later` also names the base
+  # explicitly (`Base::Job.enqueue`) because class ivars are not inherited, so
+  # `enqueue` on a subclass would reach a nil queue.
   class Job
+    QUEUE   = Queue.new
+    @inline = false
+    @worker = nil
+    @mutex  = Mutex.new
+
     class << self
+      attr_writer :inline
+
       def inline?
-        true
+        @inline || ENV["JOBS_INLINE"] == "1"
       end
 
       def run(&block)
-        block.call
+        enqueue(&block)
         nil
       end
 
@@ -1387,12 +1400,37 @@ module Base
       end
 
       def perform_later(*args, **kwargs)
-        new.perform(*args, **kwargs)
+        Base::Job.enqueue { new.perform(*args, **kwargs) }
+        nil
       end
 
+      # Public so subclasses can enqueue their own work.
       def enqueue(&block)
-        block.call
+        if inline?
+          block.call
+          return nil
+        end
+
+        QUEUE << block
+        ensure_worker
         nil
+      end
+
+      def ensure_worker
+        @mutex.synchronize do
+          return if @worker && @worker.alive?
+
+          @worker = Thread.new do
+            loop do
+              task = QUEUE.pop
+              begin
+                task.call
+              rescue StandardError => e
+                warn "[Job] #{e.class}: #{e.message}"
+              end
+            end
+          end
+        end
       end
     end
 
@@ -1402,8 +1440,8 @@ module Base
   end
 
   # Transactional mailer base, lowered from `Izen::Base::Mailer`. Builds a
-  # Mail::Message; `deliver_now` and `deliver_later` both send it over the SMTP
-  # client above (Spinel cannot carry a Mailer-typed closure through a worker).
+  # Mail::Message; `deliver_now` sends it on the request thread and
+  # `deliver_later` hands it to the job worker (delivery errors are logged).
   class Mailer
     class << self
       attr_writer :delivery_method
@@ -1475,11 +1513,7 @@ module Base
       return false if message.nil?
 
       if later
-        begin
-          deliver_message(message)
-        rescue StandardError => e
-          warn "[Mailer] #{e.class}: #{e.message}"
-        end
+        Base::Job.run { deliver_message(message) }
       else
         deliver_message(message)
       end
