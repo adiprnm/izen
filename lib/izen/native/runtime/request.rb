@@ -25,7 +25,20 @@ class Request
     @query_string                                           = query
     @raw_body                                               = body
     @headers                                                = {}
-    headers.each { |key, value| @headers[key.to_s.downcase] = value }
+    @env                                                    = {}
+    headers.each do |key, value|
+      name           = key.to_s.downcase
+      @headers[name] = value
+      # Rack-style key so app code that reads `env["HTTP_*"]`
+      # (CF-Connecting-IP, HX-Request, X-CSRF-Token) behaves as it does on
+      # Roda/Rack, instead of falling back to a shared default.
+      @env["HTTP_#{name.upcase.tr('-', '_')}"] = value
+    end
+    @env["CONTENT_TYPE"]   = @headers["content-type"] if @headers["content-type"]
+    @env["CONTENT_LENGTH"] = @headers["content-length"] if @headers["content-length"]
+    @env["REQUEST_METHOD"] = @request_method
+    @env["PATH_INFO"]      = @path_info
+    @env["QUERY_STRING"]   = @query_string
     @params                                                 = nil
     @body_io                                                = StringIO.new(body)
   end
@@ -55,7 +68,8 @@ class Request
   end
 
   def ip
-    header("x-forwarded-for") || "127.0.0.1"
+    forwarded = header("x-forwarded-for").to_s.split(",").first.to_s.strip
+    forwarded.empty? ? "127.0.0.1" : forwarded
   end
 
   def user_agent
@@ -83,10 +97,11 @@ class Request
     @headers[name.to_s.downcase]
   end
 
-  # The Roda/Rack env: the lowered request keeps headers like a Rack env, and
-  # the app's `Rack::Auth::Basic::Request.new(request.env)` path reads them.
+  # The Roda/Rack env. App code reads Rack-style `HTTP_*` keys
+  # (`HTTP_CF_CONNECTING_IP`, `HTTP_HX_REQUEST`, `HTTP_X_CSRF_TOKEN`) and
+  # `Rack::Auth::Basic::Request.new(request.env)` reads `HTTP_AUTHORIZATION`.
   def env
-    @headers
+    @env
   end
 
   def cookie(name)
