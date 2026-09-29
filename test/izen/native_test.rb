@@ -43,6 +43,10 @@ class NativeTest < Minitest::Test
     check "deleted",         !req("GET", "/widgets").body.include?("Bolt")
     check "not found",       req("GET", "/nope").status == 404
 
+    request = Request.new("GET", "/", "", "", { "cf-connecting-ip" => "198.51.100.7", "x-forwarded-for" => "203.0.113.9, 10.0.0.1", "hx-request" => "true" })
+    check "env rack keys",   request.env["HTTP_CF_CONNECTING_IP"] == "198.51.100.7" && request.env["HTTP_HX_REQUEST"] == "true"
+    check "ip first xff",    request.ip == "203.0.113.9"
+
     puts "ALL OK"
   RUBY
 
