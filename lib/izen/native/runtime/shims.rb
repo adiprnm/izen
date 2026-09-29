@@ -195,31 +195,42 @@ module Sanitize
       (config[:elements] || []).each { |name| @allowed_elements[name] = true }
       @attributes                                                     = config[:attributes] || {}
       @protocols                                                      = config[:protocols] || {}
+      # Precompute each element's allowed-attribute list once, instead of
+      # rebuilding (and re-concatenating) it for every tag on every sanitize.
+      all_attrs                                                       = @attributes[:all] || []
+      @allowed_attributes                                             = {}
+      @attributes.each do |element, list|
+        next if element == :all
+
+        @allowed_attributes[element] = all_attrs + list
+      end
+      @default_attrs                                                  = all_attrs
     end
 
     def sanitize(html)
       out  = "".dup
       pos  = 0
-      size = html.length
+      size = html.bytesize
 
       while pos < size
-        lt = html.index("<", pos)
+        lt = html.byteindex("<", pos)
         unless lt
-          out << html[pos, size - pos]
+          out << html.byteslice(pos, size - pos)
           break
         end
 
-        out << html[pos, lt - pos]
+        out << html.byteslice(pos, lt - pos)
 
-        if html[lt + 1] == "!" && html[lt + 2, 2] == "--"
-          stop = html.index("-->", lt)
+        marker = html.getbyte(lt + 1)
+        if marker == 33 && html.getbyte(lt + 2) == 45 && html.getbyte(lt + 3) == 45
+          stop = html.byteindex("-->", lt)
           break if stop.nil?
 
           pos = stop + 3
           next
         end
-        if html[lt + 1] == "!" || html[lt + 1] == "?"
-          gt = html.index(">", lt)
+        if marker == 33 || marker == 63
+          gt = html.byteindex(">", lt)
           break if gt.nil?
 
           pos = gt + 1
@@ -278,10 +289,7 @@ module Sanitize
     end
 
     def allowed_attributes(name)
-      list      = []
-      (all      = @attributes[:all]) && list.concat(all)
-      (specific = @attributes[name]) && list.concat(specific)
-      list
+      @allowed_attributes[name] || @default_attrs
     end
 
     def url_allowed?(element, attribute, value)
@@ -306,31 +314,31 @@ module Sanitize
 
     def parse_attributes(attrs)
       pos  = 0
-      size = attrs.length
+      size = attrs.bytesize
       while pos < size
-        pos += 1 while pos < size && whitespace?(attrs[pos])
+        pos += 1 while pos < size && whitespace_byte?(attrs.getbyte(pos))
         break if pos >= size
 
         start = pos
-        pos  += 1 while pos < size && !whitespace?(attrs[pos]) && attrs[pos] != "="
-        name  = attrs[start, pos - start]
-        pos  += 1 while pos < size && whitespace?(attrs[pos])
+        pos  += 1 while pos < size && !whitespace_byte?(attrs.getbyte(pos)) && attrs.getbyte(pos) != 61
+        name  = attrs.byteslice(start, pos - start)
+        pos  += 1 while pos < size && whitespace_byte?(attrs.getbyte(pos))
 
         value = ""
-        if pos < size && attrs[pos] == "="
-          pos += 1
-          pos += 1 while pos < size && whitespace?(attrs[pos])
-          if pos < size && (attrs[pos] == '"' || attrs[pos] == "'")
-            quote  = attrs[pos]
+        if pos < size && attrs.getbyte(pos) == 61
+          pos  += 1
+          pos  += 1 while pos < size && whitespace_byte?(attrs.getbyte(pos))
+          quote = pos < size ? attrs.getbyte(pos) : nil
+          if quote == 34 || quote == 39
             pos   += 1
             vstart = pos
-            pos   += 1 while pos < size && attrs[pos] != quote
-            value  = attrs[vstart, pos - vstart]
+            pos   += 1 while pos < size && attrs.getbyte(pos) != quote
+            value  = attrs.byteslice(vstart, pos - vstart)
             pos   += 1
           else
             vstart = pos
-            pos   += 1 while pos < size && !whitespace?(attrs[pos])
-            value  = attrs[vstart, pos - vstart]
+            pos   += 1 while pos < size && !whitespace_byte?(attrs.getbyte(pos))
+            value  = attrs.byteslice(vstart, pos - vstart)
           end
         end
 
@@ -339,35 +347,35 @@ module Sanitize
     end
 
     def scan_tag(html, start)
-      size    = html.length
+      size    = html.bytesize
       i       = start + 1
       closing = false
-      if html[i] == "/"
+      if html.getbyte(i) == 47
         closing = true
         i      += 1
       end
 
       j  = i
-      j += 1 while j < size && tag_name_char?(html[j])
+      j += 1 while j < size && tag_name_byte?(html.getbyte(j))
       return nil if j == i
 
-      name  = html[i, j - i]
+      name  = html.byteslice(i, j - i)
       k     = j
       quote = nil
       while k < size
-        c = html[k]
+        c = html.getbyte(k)
         if quote
           quote = nil if c == quote
-        elsif c == '"' || c == "'"
+        elsif c == 34 || c == 39
           quote = c
-        elsif c == ">"
+        elsif c == 62
           break
         end
         k += 1
       end
       return nil if k >= size
 
-      attrs        = html[j, k - j]
+      attrs        = html.byteslice(j, k - j)
       trimmed      = attrs.rstrip
       self_closing = trimmed.end_with?("/")
       attrs        = trimmed[0, trimmed.length - 1] if self_closing
@@ -377,9 +385,9 @@ module Sanitize
     def find_close(html, from, name)
       depth = 0
       pos   = from
-      size  = html.length
+      size  = html.bytesize
       while pos < size
-        lt = html.index("<", pos)
+        lt = html.byteindex("<", pos)
         return nil if lt.nil?
 
         tag = scan_tag(html, lt)
@@ -403,15 +411,15 @@ module Sanitize
       nil
     end
 
-    def whitespace?(char)
-      char == " " || char == "\t" || char == "\n" || char == "\r" || char == "\f"
+    def whitespace_byte?(byte)
+      byte == 32 || byte == 9 || byte == 10 || byte == 13 || byte == 12
     end
 
-    def tag_name_char?(char)
-      return false if char.nil?
+    def tag_name_byte?(byte)
+      return false if byte.nil?
 
-      (char >= "a" && char <= "z") || (char >= "A" && char <= "Z") ||
-        (char >= "0" && char <= "9") || char == ":" || char == "-"
+      (byte >= 97 && byte <= 122) || (byte >= 65 && byte <= 90) ||
+        (byte >= 48 && byte <= 57) || byte == 58 || byte == 45
     end
 
     def decode(value)
