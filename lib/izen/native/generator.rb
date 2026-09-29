@@ -343,6 +343,11 @@ module Izen
       # `false` => none), which is how Izen's `layout:` option is passed.
       def render_view_method(views, layouts:, default_layout:)
         out = +"  def view(template, locals: {}, layout: nil)\n"
+        # Rendering a template assigns `@_out_buf` as it runs. A partial invoked
+        # from inside a helper (`view("x", layout: false)`) would otherwise
+        # clobber the caller's buffer, so save it around the whole call and
+        # return the captured output instead of leaving `@_out_buf` swapped.
+        out << "    saved = @_out_buf\n"
         if views.empty?
           out << "    inner = \"\"\n"
         else
@@ -355,19 +360,25 @@ module Izen
           out << "      else \"\"\n"
           out << "      end\n"
         end
-        out << "    return inner if layout == false\n"
+        out << "    result =\n"
         if layouts.empty?
-          out << "    inner\n"
+          out << "      inner\n"
         else
-          out << "    name = layout || #{default_layout.inspect}\n"
-          out << "    case name\n"
+          out << "      if layout == false\n"
+          out << "        inner\n"
+          out << "      else\n"
+          out << "        name = layout || #{default_layout.inspect}\n"
+          out << "        case name\n"
           layouts.each do |path|
             template = template_name(path)
-            out << "    when #{template.inspect} then layout_view_#{template.tr('/', '_')}(inner)\n"
+            out << "        when #{template.inspect} then layout_view_#{template.tr('/', '_')}(inner)\n"
           end
-          out << "    else inner\n"
-          out << "    end\n"
+          out << "        else inner\n"
+          out << "        end\n"
+          out << "      end\n"
         end
+        out << "    @_out_buf = saved\n"
+        out << "    result\n"
         out << "  end\n"
         out
       end
@@ -503,6 +514,15 @@ module Izen
       end
 
       def write_bin
+        # The source app.rb starts the scheduler in-process; the native boot has
+        # no `app.rb` top level, so replicate it here when the app ships one.
+        boot = File.file?(
+          File.join(
+            @source,
+            "app",
+            "scheduler.rb"
+          )
+        ) ? "Scheduler.start unless Database.env == \"test\"\n" : ""
         File.write(File.join(@out, "bin", "serve.rb"), <<~RUBY)
           # frozen_string_literal: true
 
@@ -510,7 +530,7 @@ module Izen
           require_relative "../runtime/server"
 
           Database.migrate!   # idempotent; adopts an existing database
-          Server.run
+          #{boot}Server.run
         RUBY
       end
 
@@ -578,7 +598,7 @@ module Izen
 
           FROM debian:bookworm-slim
           RUN apt-get update -qq \\
-           && apt-get install --no-install-recommends -y libsqlite3-0 libssl3 libcrypt1 \\
+           && apt-get install --no-install-recommends -y libsqlite3-0 libssl3 libcrypt1 libvips-tools \\
            && rm -rf /var/lib/apt/lists/*
           WORKDIR /app
           COPY public/ ./public/

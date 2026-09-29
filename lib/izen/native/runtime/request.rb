@@ -51,7 +51,7 @@ class Request
   end
 
   def segments
-    @path_info.split("/").reject { |segment| segment.empty? }
+    @path_info.split("/").reject { |segment| segment.empty? }.map { |segment| Rack::Utils.unescape_path(segment) }
   end
 
   def ip

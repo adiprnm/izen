@@ -9,10 +9,25 @@ module Rack
   module Utils
     module_function
 
-    # Percent-encode everything outside the unreserved set (Rack::Utils's
-    # escape_path is used for mailto query values in the views).
+    # Rack::Utils.escape_path = URI::RFC2396_Parser#escape: only characters
+    # outside the URI-safe set are percent-encoded, so `:` and other reserved
+    # sub-delims survive and a space becomes `%20` (not the form `+`).
+    PATH_SAFE = "-_.!~*'();/?:@&=+$,[]"
+
     def escape_path(value)
-      escape(value)
+      out = "".dup
+      value.to_s.each_byte do |byte|
+        char = byte.chr
+        if (char >= "a" && char <= "z") ||
+           (char >= "A" && char <= "Z") ||
+           (char >= "0" && char <= "9") ||
+           PATH_SAFE.include?(char)
+          out << char
+        else
+          out << "%" << byte.to_s(16).upcase.rjust(2, "0")
+        end
+      end
+      out
     end
 
     # --- escaping ---------------------------------------------------------
@@ -45,6 +60,28 @@ module Rack
           out << " "
           i += 1
         elsif char == "%" && i + 2 < string.length
+          out << string[i + 1, 2].to_i(16).chr
+          i += 3
+        else
+          out << char
+          i += 1
+        end
+      end
+      out
+    end
+
+    # Percent-decoding for path segments: `+` stays a literal plus (only query
+    # strings use it for a space), matching Rack::Utils.unescape_path.
+    def unescape_path(value)
+      string = value.to_s
+      return string unless string.include?("%")
+
+      out = "".dup
+      i   = 0
+      len = string.length
+      while i < len
+        char = string[i]
+        if char == "%" && i + 2 < len
           out << string[i + 1, 2].to_i(16).chr
           i += 3
         else
