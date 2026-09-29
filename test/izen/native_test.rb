@@ -8,6 +8,8 @@ require "izen/native"
 # `Rack::Utils`, `SecureRandom`, ...), so it is exercised in a subprocess
 # instead of inside the test process.
 class NativeTest < Minitest::Test
+  include TestSupport::Scaffold
+
   DRIVER = <<~'RUBY'
     # frozen_string_literal: true
     ENV["APP_ENV"] = "test"
@@ -46,10 +48,10 @@ class NativeTest < Minitest::Test
     request = Request.new("GET", "/", "", "", { "cf-connecting-ip" => "198.51.100.7", "x-forwarded-for" => "203.0.113.9, 10.0.0.1", "hx-request" => "true" })
     check "env rack keys",   request.env["HTTP_CF_CONNECTING_IP"] == "198.51.100.7" && request.env["HTTP_HX_REQUEST"] == "true"
     check "ip first xff",    request.ip == "203.0.113.9"
+    check "sqlite_time",     Base::Repository.new.sqlite_time(Time.utc(2026, 8, 13, 5, 56, 57)) == "2026-08-13 05:56:57.000000"
 
     puts "ALL OK"
   RUBY
-
   # Minimal app with no module views: only the root route and the layout.
   PLAIN_DRIVER = <<~'RUBY'
     # frozen_string_literal: true
@@ -436,35 +438,9 @@ class NativeTest < Minitest::Test
     puts "ALL OK"
   RUBY
 
-  # Builds a minimal Izen app with `izen new` (+ a module unless disabled).
-  def scaffold_project(dir, with_module: true)
-    previous  = Izen.root
-    Izen.root = dir
-
-    quiet { Izen::Cli.run([ "new", "demo" ]) }
-    project = File.join(dir, "demo")
-
-    if with_module
-      Izen.root = project
-      quiet { Izen::Cli.run([ "module", "new", "widget", "name:string", "price:integer", "description:text" ]) }
-    end
-
-    project
-  ensure
-    Izen.root = previous
-  end
-
   def run_driver(out, source = DRIVER)
     driver = File.join(out, "..", "driver.rb")
     File.write(driver, source)
     IO.popen([ RbConfig.ruby, driver, out ], chdir: out, err: [ :child, :out ], &:read)
-  end
-
-  def quiet
-    original = $stdout
-    $stdout  = StringIO.new
-    yield
-  ensure
-    $stdout = original
   end
 end

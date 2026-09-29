@@ -53,6 +53,18 @@ module Izen
         db.transaction(&block)
       end
 
+      # Formats a Time for a SQLite DATETIME column.
+      #
+      # `Time#to_s` appends a " UTC" suffix SQLite's date functions cannot
+      # parse, so write the "YYYY-MM-DD HH:MM:SS.ffffff" form SQLite and Sequel
+      # use -- the form `datetime()` accepts. Calls strftime directly rather
+      # than probing respond_to? (Spinel's respond_to? misses Time#strftime).
+      def sqlite_time(value)
+        return nil if value.nil?
+
+        value.strftime("%Y-%m-%d %H:%M:%S.%6N")
+      end
+
       private
 
       def symbolize(row)

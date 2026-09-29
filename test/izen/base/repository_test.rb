@@ -34,4 +34,10 @@ class RepositoryTest < TestSupport::DatabaseTest
 
     assert_equal "Kopi", @repository.find_one("SELECT name FROM widgets WHERE name = ?", [ binary ])[:name]
   end
+
+  def test_sqlite_time_binds_the_format_sqlite_can_parse
+    assert_equal "2026-08-13 05:56:57.000000", @repository.sqlite_time(Time.utc(2026, 8, 13, 5, 56, 57))
+    assert_equal "2026-08-13 05:56:57.123456", @repository.sqlite_time(Time.utc(2026, 8, 13, 5, 56, 57, 123_456))
+    assert_nil @repository.sqlite_time(nil)
+  end
 end

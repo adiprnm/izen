@@ -30,6 +30,16 @@ module Base
       db.transaction(&block)
     end
 
+    # SQLite stores timestamps as text. Time#to_s appends a " UTC" suffix its
+    # date functions cannot parse, so write the "YYYY-MM-DD HH:MM:SS.ffffff"
+    # form SQLite and Sequel write. (strftime is called directly: Spinel's
+    # respond_to? does not see Time#strftime.)
+    def sqlite_time(value)
+      return nil if value.nil?
+
+      value.strftime("%Y-%m-%d %H:%M:%S.%6N")
+    end
+
     private
 
     def symbolize(row)
