@@ -41,9 +41,10 @@ class SqliteCrubyAdapter
   end
 end
 
-# Owns the single SQLite connection for the process.
+# Owns one SQLite connection per thread (see Izen::Database).
 module Database
-  CONNECTION_MUTEX = Monitor.new
+  # Thread-local key for the per-thread connection, matching Izen::Database.
+  THREAD_KEY = :database_connection
 
   class << self
     # The app root. The native binary runs with the app as its working
@@ -60,8 +61,16 @@ module Database
       DatabaseConfig::PATHS.fetch(env, DatabaseConfig::DEFAULT_PATH)
     end
 
+    # One connection per thread: the server runs a thread per client
+    # connection and SQLite connections are not safe to share. A single global
+    # connection serialised every query behind one mutex.
     def connection
-      CONNECTION_MUTEX.synchronize { @connection ||= connect }
+      conn = Thread.current[THREAD_KEY]
+      return conn if conn
+
+      conn                       = connect
+      Thread.current[THREAD_KEY] = conn
+      conn
     end
 
     def connect
@@ -81,8 +90,11 @@ module Database
     end
 
     def disconnect
-      @connection&.close
-      @connection = nil
+      conn = Thread.current[THREAD_KEY]
+      return unless conn
+
+      Thread.current[THREAD_KEY] = nil
+      conn.close
     end
   end
 end

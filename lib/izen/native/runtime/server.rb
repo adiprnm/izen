@@ -33,9 +33,10 @@ module Server
   module_function
 
   def run(port = ENV.fetch("PORT", "3000").to_i)
-    Database.connection # open + PRAGMA once, before any worker contends
+    Database.connection # create the db dir + enable WAL once, before workers
     @running  = true
     @listener = TCPServer.new("0.0.0.0", port)
+    set_nodelay(@listener)
     install_signal_handlers
     $stderr.puts("listening on 0.0.0.0:#{port}")
 
@@ -73,7 +74,17 @@ module Server
     end
   end
 
+  # Disable Nagle on every connection. The response is written in a single
+  # `write` below, but keep this too: without TCP_NODELAY a split write plus
+  # the peer's delayed ACK stalls each keep-alive request by tens of ms.
+  def set_nodelay(socket)
+    socket.setsockopt(Socket::IPPROTO_TCP, Socket::TCP_NODELAY, 1)
+  rescue StandardError
+    nil
+  end
+
   def track_and_serve(socket)
+    set_nodelay(socket)
     @mutex.synchronize { @active += 1 }
     Thread.new do
       begin
@@ -97,6 +108,7 @@ module Server
     $stderr.puts("server error: #{error.message}")
   ensure
     socket.close
+    Database.disconnect # close this worker thread's SQLite connection
   end
 
   def shutdown
@@ -135,17 +147,21 @@ module Server
   def write_response(socket, response)
     body   = response.body.to_s
     status = response.status
-    socket.write("HTTP/1.1 #{status} #{STATUS_TEXT.fetch(status, "OK")}\r\n")
+    out    = "".dup
+    out << "HTTP/1.1 #{status} #{STATUS_TEXT.fetch(status, "OK")}\r\n"
     response.headers.each do |key, value|
       next if key == "Content-Length"
 
-      socket.write("#{key}: #{value}\r\n")
+      out << "#{key}: #{value}\r\n"
     end
-    socket.write("Content-Type: text/html; charset=utf-8\r\n") unless response.headers["Content-Type"]
-    socket.write("Content-Length: #{body.bytesize}\r\n")
-    socket.write("Connection: keep-alive\r\n")
-    socket.write("\r\n")
-    socket.write(body)
+    out << "Content-Type: text/html; charset=utf-8\r\n" unless response.headers["Content-Type"]
+    out << "Content-Length: #{body.bytesize}\r\n"
+    out << "Connection: keep-alive\r\n"
+    out << "\r\n"
+    out << body
+    # One syscall per response: the previous per-header writes let Nagle hold
+    # the header block back until the ACK for the status line arrived.
+    socket.write(out)
   end
 
   def keep_alive?(request)
