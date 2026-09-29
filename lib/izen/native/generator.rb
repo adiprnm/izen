@@ -153,6 +153,10 @@ module Izen
           .gsub("Izen::Database", "Database")
           .gsub("Izen::Encryptor", "Encryptor")
           .gsub("Izen::HTTP", "HTTP")
+          # Spinel's bundled digest has no SHA512; the runtime shim provides a
+          # top-level SHA512 (see shims.rb) to avoid shadowing CRuby's real
+          # Digest::SHA512 class.
+          .gsub("Digest::SHA512", "SHA512")
       end
 
       def copy_lib
