@@ -72,7 +72,7 @@ class NativeTest < Minitest::Test
       assert File.file?(File.join(out, "spinel", "sqlite_shim.c"))
       assert File.file?(File.join(out, "db", "schema.sql"))
       assert File.file?(File.join(out, "config", "deploy.yml"))
-      assert File.file?(File.join(out, ".kamal", "secrets"))
+      assert File.file?(File.join(out, ".kamal", "secrets-common"))
 
       assert_includes File.read(File.join(out, "generated", "models.rb")), "class Model < Base::Model"
       assert_includes File.read(File.join(out, "generated", "routes.rb")), 'r.segments[0] == "widgets"'
@@ -120,7 +120,29 @@ class NativeTest < Minitest::Test
       assert_includes deploy, "app_port: 3000"
       assert_includes deploy, "demo_storage:/app/storage"
 
-      assert_includes File.read(File.join(out, ".kamal", "secrets")), "SESSION_SECRET=$SESSION_SECRET"
+      assert_includes File.read(File.join(out, ".kamal", "secrets-common")), "SESSION_SECRET=$SESSION_SECRET"
+    end
+  end
+
+  def test_copies_kamal_destination_configs
+    Dir.mktmpdir("izen-native") do |dir|
+      source = scaffold_project(dir)
+      out    = File.join(dir, "native")
+      File.write(File.join(source, "config", "deploy.staging.yml"), <<~YAML)
+        image: demo-staging
+        proxy:
+          host: staging.example.com
+        volumes:
+          - "demo_staging_storage:/app/storage"
+      YAML
+
+      Izen::Native::Generator.new(source, out).run
+
+      staging = File.read(File.join(out, "config", "deploy.staging.yml"))
+      assert_includes staging, "staging.example.com"
+      assert_includes staging, "demo_staging_storage:/app/storage"
+      # Kamal only reads `.kamal/secrets-common` once a destination is passed.
+      assert File.file?(File.join(out, ".kamal", "secrets-common"))
     end
   end
 
