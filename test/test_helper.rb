@@ -87,3 +87,5 @@ module TestSupport
 end
 
 Izen.root = TestSupport.root
+
+require_relative "support/scaffold"

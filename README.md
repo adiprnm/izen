@@ -216,8 +216,43 @@ cd native && bundle install
 APP_ENV=test ruby -e 'require "./app"; Database.migrate!'
 ```
 
-Scaffolded projects get `rake native:generate`, `rake native:build` and
-`rake native:run` tasks, and `native/` is git-ignored.
+Scaffolded projects get `rake native:generate`, `rake native:build`,
+`rake native:run` and `rake native:verify` tasks, and `native/` is git-ignored.
+
+### Behavioural parity
+
+Because the generated project is plain Ruby, it also runs on CRuby — which is
+what makes parity testable. `Izen::Native::Conformance` replays one stateful
+request sequence against the source Roda app, the generated project on CRuby and
+the compiled native binary, and compares status, redirect target and body.
+Cookie names/values and transport headers (`Content-Type`, `Date`) are
+deliberately **not** compared: they legitimately differ between the runtimes,
+while the behaviour they carry — the redirect, the rendered body — must not.
+
+**Framework parity** (the lowering itself) is gated by the gem's own suite:
+
+```sh
+bundle exec rake test                # source vs generated-on-CRuby
+bundle exec rake native:conformance  # also compiles the binary and compares it
+```
+
+`rake test` needs no Spinel. `rake native:conformance` runs `spin build` and
+adds the compiled binary as a third backend, so a regression that only shows up
+under Spinel or the FFI SQLite adapter fails before it reaches production.
+
+**App parity** (your routes and views) is scaffolded into every new project:
+`izen new` writes `test/native_scenarios.rb`, and `rake native:verify` diffs the
+app on CRuby against the compiled binary over those scenarios:
+
+```sh
+bundle exec rake native:verify
+```
+
+Edit `test/native_scenarios.rb` to add the read paths (and, if you want, write
+flows) you care about. Both runs start from a fresh test database, so keep
+scenarios deterministic. `rake native:verify` builds to `tmp/native-verify/`.
+A baseline assertion on the reference keeps the gem's own scenario honest (a
+wall of empty 200s cannot pass parity).
 
 ### Notes and limitations
 

@@ -66,6 +66,7 @@ class CliTest < TestSupport::DatabaseTest
     assert File.file?(File.join(project, ".kamal", "secrets-common"))
     assert File.file?(File.join(project, "views", "layout.erb"))
     assert File.file?(File.join(project, "test", "test_helper.rb"))
+    assert File.file?(File.join(project, "test", "native_scenarios.rb"))
     assert File.file?(File.join(project, ".gitignore"))
     assert File.directory?(File.join(project, "app"))
     assert File.directory?(File.join(project, "migrations"))
@@ -97,6 +98,10 @@ class CliTest < TestSupport::DatabaseTest
     assert_includes app, "class App < Izen::Application"
     assert_includes app, "# cli:module-routes"
     assert_includes app, "Izen.configure"
+
+    rakefile = File.read(File.join(project, "Rakefile"))
+    assert_includes rakefile, "task :verify"
+    assert_includes rakefile, "izen/native/conformance"
   ensure
     Izen.root = previous
     FileUtils.remove_entry(dir)

@@ -23,6 +23,25 @@ namespace :native do
   task :run do
     sh "bundle exec izen native run"
   end
+
+  desc "Diff this app on CRuby against the compiled native binary"
+  task :verify do
+    require "izen/native"
+    require "izen/native/conformance"
+
+    source    = File.expand_path(__dir__)
+    native    = File.join(source, "tmp", "native-verify", "native")
+    scenarios = Izen::Native::Conformance.load_scenarios(File.join(source, "test", "native_scenarios.rb"))
+
+    binary    = Izen::Native::Builder.new(source: source, out: native).build
+    reference = Izen::Native::Conformance.rack(source, scenarios: scenarios)
+    actual    = Izen::Native::Conformance.binary(binary, native, scenarios: scenarios)
+    diffs     = Izen::Native::Conformance.differences(reference, actual)
+
+    abort "native parity failed:\n#{diffs.join("\n\n")}" unless diffs.empty?
+
+    puts "native parity OK (#{scenarios.size} scenarios)"
+  end
 end
 
 task default: :test

@@ -1,0 +1,24 @@
+# frozen_string_literal: true
+
+# Requests replayed by `rake native:verify` against both this app on CRuby and
+# the compiled native binary. The task fails if their status, redirect target or
+# body differ.
+#
+# Each entry is a Hash:
+#
+#   { "id" => "show", "method" => "GET", "path" => "/posts/1",
+#     "query" => "page=2", "body" => "name=x",
+#     "headers" => { "content-type" => "application/x-www-form-urlencoded" } }
+#
+# Cookies set by one response are replayed on the next request, so session and
+# flash flows work. Both runs start from a fresh test database but share the
+# schema, so keep scenarios deterministic: no timestamps, no unstable ordering.
+#
+# The defaults are read-only smoke checks that pass on any app. Add the read
+# paths (and, if you like, write flows) you care about.
+module NativeScenarios
+  SCENARIOS = [
+    { "id" => "root",      "method" => "GET", "path" => "/" },
+    { "id" => "not-found", "method" => "GET", "path" => "/izen-conformance-missing" }
+  ].freeze
+end
