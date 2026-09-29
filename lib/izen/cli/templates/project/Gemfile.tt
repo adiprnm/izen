@@ -2,7 +2,7 @@
 
 source "https://rubygems.org"
 
-gem "izen"
+gem "izen", github: "adiprnm/izen"
 gem "puma", "~> 6.0"
 gem "rackup", "~> 2.2"
 gem "tilt", "~> 2.4"
