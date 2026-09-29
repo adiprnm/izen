@@ -186,6 +186,33 @@ class NativeTest < Minitest::Test
     end
   end
 
+  # `native/` (Dockerfile + pack/) is git-ignored, so the native Kamal config
+  # must pin the build context; otherwise Kamal clones the repo and finds no
+  # context to build.
+  def test_native_kamal_config_pins_the_build_context
+    Dir.mktmpdir("izen-native") do |dir|
+      source = scaffold_project(dir)
+      out    = File.join(dir, "native")
+      File.write(File.join(source, "config", "deploy.yml"), <<~YAML)
+        service: custom
+        servers:
+          web:
+            - 10.0.0.1
+        proxy:
+          ssl: true
+          host: custom.example.com
+        builder:
+          arch: amd64
+      YAML
+
+      Izen::Native::Generator.new(source, out).run
+
+      deploy = File.read(File.join(out, "config", "deploy.yml"))
+      assert_includes deploy, "app_port: 3000"
+      assert_includes deploy, 'context: "."'
+    end
+  end
+
   def test_generates_a_plain_app_without_module_views
     Dir.mktmpdir("izen-native") do |dir|
       source = scaffold_project(dir, with_module: false)

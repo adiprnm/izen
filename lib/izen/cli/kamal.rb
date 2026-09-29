@@ -7,8 +7,9 @@ module Izen
     # generated `native/` project, where the Dockerfile and `pack/` live).
     #
     # Keep the templates boring: a fresh project gets a working `deploy.yml`
-    # plus an empty `.kamal/secrets` that pulls the two Izen secrets from the
-    # environment. Everything the user must edit (server, host, registry) is
+    # plus an empty `.kamal/secrets-common` that pulls the two Izen secrets from
+    # the environment. (Kamal reads `secrets-common` for every deploy, whereas
+    # `.kamal/secrets` is ignored once `-d <destination>` is passed.) Everything the user must edit (server, host, registry) is
     # left as an obvious placeholder.
     module Kamal
       module_function
@@ -62,7 +63,7 @@ module Izen
           builder:
             arch: amd64
 
-          # Inject ENV variables into containers (secrets come from .kamal/secrets).
+          # Inject ENV variables into containers (secrets come from .kamal/secrets-common).
           env:
             clear:
               APP_ENV: production
@@ -81,7 +82,7 @@ module Izen
         YAML
       end
 
-      # The `.kamal/secrets` contents: it references the Izen secrets from the
+      # The `.kamal/secrets-common` contents: it references the Izen secrets from the
       # environment instead of storing raw credentials.
       def secrets(_name = nil)
         <<~SECRETS

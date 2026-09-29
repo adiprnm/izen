@@ -63,7 +63,7 @@ class CliTest < TestSupport::DatabaseTest
     assert File.file?(File.join(project, "Rakefile"))
     assert File.file?(File.join(project, "config", "database.yaml"))
     assert File.file?(File.join(project, "config", "deploy.yml"))
-    assert File.file?(File.join(project, ".kamal", "secrets"))
+    assert File.file?(File.join(project, ".kamal", "secrets-common"))
     assert File.file?(File.join(project, "views", "layout.erb"))
     assert File.file?(File.join(project, "test", "test_helper.rb"))
     assert File.file?(File.join(project, ".gitignore"))
@@ -77,7 +77,7 @@ class CliTest < TestSupport::DatabaseTest
     assert_includes gitignore, ".env"
     assert_includes gitignore, "!.env.example"
     assert_includes gitignore, "/native/"
-    assert_includes gitignore, "/config/deploy.yml"
+    assert_includes gitignore, "/config/deploy*.yml"
     assert_includes gitignore, "/.kamal/"
 
     deploy = File.read(File.join(project, "config", "deploy.yml"))
@@ -85,7 +85,7 @@ class CliTest < TestSupport::DatabaseTest
     assert_includes deploy, "app_port: 3000"
     assert_includes deploy, "blog_storage:/app/storage"
 
-    secrets = File.read(File.join(project, ".kamal", "secrets"))
+    secrets = File.read(File.join(project, ".kamal", "secrets-common"))
     assert_includes secrets, "SESSION_SECRET=$SESSION_SECRET"
     assert_includes secrets, "APP_ENCRYPTION_KEY=$APP_ENCRYPTION_KEY"
 

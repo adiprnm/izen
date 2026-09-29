@@ -61,7 +61,7 @@ module Izen
         end
 
         write("config/deploy.yml", Kamal.deploy_yml(@name))
-        write(".kamal/secrets", Kamal.secrets(@name))
+        write(".kamal/secrets-common", Kamal.secrets(@name))
 
         summary
       end
@@ -106,7 +106,7 @@ module Izen
         puts "  #{Style.step('bundle exec izen dev')}"
         puts
         puts "Kamal deploy config written to #{Style.path('config/deploy.yml')} " \
-             "(secrets in #{Style.path('.kamal/secrets')})."
+             "(secrets in #{Style.path('.kamal/secrets-common')})."
       end
     end
   end

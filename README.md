@@ -100,9 +100,9 @@ izen module new post title:string body:text    # scaffold a domain module
 `config/database.yaml`, `views/layout.erb`, `Rakefile`, `README.md`,
 `.env.example`, a smoke test, and the `app/`, `migrations/` and `storage/`
 directories. It also scaffolds a Kamal deploy setup — `config/deploy.yml` and
-`.kamal/secrets` — for the native build (see [Kamal deployment](#kamal-deployment)).
+`.kamal/secrets-common` — for the native build (see [Kamal deployment](#kamal-deployment)).
 The generated `.gitignore` ignores Bundler caches, local `.env` files (keeping
-`.env.example`), the local `config/deploy.yml` and `.kamal/`, `/log/`, `/tmp/`
+`.env.example`), the local `config/deploy*.yml` and `.kamal/`, `/log/`, `/tmp/`
 and `/coverage/`, the SQLite databases and session secret under `storage/`,
 Spinel's `native/` build output, and editor/OS noise. Pass `--force` to scaffold
 into a non-empty directory or `--no-test` to skip the test files.
@@ -226,10 +226,11 @@ native binary can ship with no extra setup:
 - `izen new` scaffolds `config/deploy.yml` (service, image, proxy with
   `app_port: 3000`, a local registry, the `SESSION_SECRET` /
   `APP_ENCRYPTION_KEY` secrets and a `<name>_storage:/app/storage` volume) and
-  an empty `.kamal/secrets` that reads those secrets from the environment.
+  an empty `.kamal/secrets-common` that reads those secrets from the environment.
 - `izen native build` copies the app's `config/deploy.yml` into the generated
-  `native/` project (patching the proxy port to 3000), or writes a default when
-  the app has none, and carries `.kamal/` over.
+  `native/` project (patching the proxy port to 3000 and pinning the build
+  context, since `native/` is git-ignored), along with any
+  `config/deploy.<destination>.yml`, and carries `.kamal/` over.
 
 Fill in the placeholder server, host and image, export the secrets, then deploy
 from the directory that holds the Dockerfile and the `pack/` build context:
@@ -245,7 +246,9 @@ kamal deploy     # afterwards
 
 The SQLite database and the persisted session secret live on the
 `<name>_storage` volume mounted at `/app/storage`, so redeploys keep their data.
-`config/deploy.yml` and `.kamal/` are git-ignored (they hold server details and
+To run a second environment (e.g. staging) with its own host, image and volume,
+add `config/deploy.staging.yml` and deploy with `kamal deploy -d staging`.
+`config/deploy*.yml` and `.kamal/` are git-ignored (they hold server details and
 secrets); keep them on disk.
 
 ## License

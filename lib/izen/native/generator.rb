@@ -664,20 +664,39 @@ module Izen
         deploy = File.join(@source, "config", "deploy.yml")
         text   = File.file?(deploy) ? File.read(deploy) : Izen::Cli::Kamal.deploy_yml(@name)
 
+        ensure_builder_context(patch_proxy_port(text))
+      end
+
+      # The native server listens on 3000 (the Dockerfile sets PORT), while the
+      # source config targets the CRuby server on 80.
+      def patch_proxy_port(text)
         text = text.gsub(/^(\s*)#\s*app_port:\s*\d+\s*$/, '\1app_port: 3000')
-        unless text.include?("app_port: 3000")
-          text = text.sub(/^(proxy:\s*\n)/, "\\1  app_port: 3000\n")
+        return text if text.include?("app_port: 3000")
+
+        text.sub(/^(proxy:\s*\n)/, "\\1  app_port: 3000\n")
+      end
+
+      # The native build context (Dockerfile + pack/) is generated and
+      # gitignored, so Kamal must build from the working tree. Setting `context`
+      # explicitly also disables Kamal's git clone, which would otherwise drop
+      # pack/ and fail the build.
+      def ensure_builder_context(text)
+        return text if text.match?(/^\s*context:\s/)
+
+        if text.match?(/^builder:\s*$/)
+          text.sub(/^(builder:\s*\n)/, "\\1  context: \".\"\n")
+        else
+          "#{text}\n# Native builds use the generated working tree as the build context.\nbuilder:\n  context: \".\"\n"
         end
-        text
       end
 
       # Shared secrets live in `.kamal/secrets-common`: Kamal reads that file
       # for every deploy, with or without a destination, whereas `.kamal/secrets`
       # is ignored once `-d <destination>` is passed.
       def write_kamal_secrets
-        source = File.join(@source, ".kamal", "secrets")
+        source = [ File.join(@source, ".kamal", "secrets-common"), File.join(@source, ".kamal", "secrets") ].find { |path| File.file?(path) }
         target = File.join(@out, ".kamal", "secrets-common")
-        if File.file?(source)
+        if source
           FileUtils.cp(source, target)
         else
           File.write(target, Izen::Cli::Kamal.secrets(@name))
