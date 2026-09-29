@@ -37,6 +37,7 @@ require "izen/base/controller"
 require "izen/base/session"
 require "izen/base/session_plugin"
 require "izen/base/job"
+require "izen/base/batcher"
 require "izen/base/mailer"
 
 require "izen/application"

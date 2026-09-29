@@ -116,6 +116,7 @@ module Server
     while active_connections.positive? && Time.now < deadline
       sleep 0.05
     end
+    Base::Batcher.flush_all # persist buffered write-behind items before closing
     Database.disconnect
     $stderr.puts("shutdown complete")
   end

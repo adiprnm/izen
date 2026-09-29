@@ -1447,6 +1447,96 @@ module Base
     end
   end
 
+  # Write-behind buffer, lowered from `Izen::Base::Batcher`. Collects items in
+  # memory and persists them in batches from a background worker, turning N
+  # slow commits (one fsync each) into one commit per batch. The CRuby
+  # implementation carries the full contract; this mirror keeps the Spinel
+  # subset rules (explicit class names, no `||=` on an index write).
+  class Batcher
+    DEFAULT_INTERVAL = 2   # seconds between flushes
+    DEFAULT_MAX_SIZE = 500 # flush early once this many items are buffered
+
+    REGISTRY       = []
+    REGISTRY_MUTEX = Mutex.new
+
+    class << self
+      def register(batcher)
+        REGISTRY_MUTEX.synchronize { REGISTRY << batcher }
+        nil
+      end
+
+      def flush_all
+        batchers = REGISTRY_MUTEX.synchronize { REGISTRY.dup }
+        batchers.each { |batcher| batcher.flush }
+        nil
+      end
+    end
+
+    def initialize(interval: DEFAULT_INTERVAL, max_size: DEFAULT_MAX_SIZE, inline: false)
+      @interval = interval
+      @max_size = max_size
+      @inline   = inline
+      @buffer   = []
+      @mutex    = Mutex.new
+      @worker   = nil
+      Base::Batcher.register(self)
+    end
+
+    def push(item)
+      if inline?
+        perform([ item ])
+        return nil
+      end
+
+      @mutex.synchronize { @buffer << item }
+      ensure_worker
+      flush if size >= @max_size
+      nil
+    end
+
+    def flush
+      batch = @mutex.synchronize do
+        rows    = @buffer
+        @buffer = []
+        rows
+      end
+      return nil if batch.empty?
+
+      perform(batch)
+      nil
+    rescue StandardError => error
+      $stderr.puts("[izen] batcher flush failed: #{error.message}")
+      nil
+    end
+
+    def size
+      @mutex.synchronize { @buffer.size }
+    end
+
+    def perform(_batch)
+      raise NotImplementedError, "batcher must implement #perform"
+    end
+
+    private
+
+    def inline?
+      @inline || ENV["BATCHERS_INLINE"] == "1"
+    end
+
+    def ensure_worker
+      @mutex.synchronize do
+        return if @worker && @worker.alive?
+
+        @worker = Thread.new do
+          loop do
+            sleep @interval
+            flush
+          end
+        end
+      end
+    end
+  end
+
   # Transactional mailer base, lowered from `Izen::Base::Mailer`. Builds a
   # Mail::Message; `deliver_now` sends it on the request thread and
   # `deliver_later` hands it to the job worker (delivery errors are logged).

@@ -18,6 +18,7 @@ for a layer built around models and schemas.
 | `Izen::Application` | Base Roda app: render, flash, signed-cookie sessions and PUT/PATCH/DELETE (with method override), rooted at `Izen.root` |
 | `Izen::Base::Session` | Signed-cookie sessions without OpenSSL |
 | `Izen::Base::Job` | Single-thread background job base class + worker |
+| `Izen::Base::Batcher` | Write-behind buffer: persist fire-and-forget writes in batches |
 | `Izen::Base::Mailer` | Transactional mailer base class |
 | `Izen::Database` | Thread-local SQLite connection (WAL + foreign keys) |
 | `Izen::HTTP` | Small HTTP client supporting every HTTP method |
@@ -79,6 +80,29 @@ It also enables `:all_verbs` so routes can match `r.put`, `r.patch` and
   <button>Delete</button>
 </form>
 ```
+
+## Batched writes
+
+`Izen::Base::Batcher` is a write-behind buffer for fire-and-forget data
+(analytics, logs, metrics): it collects items in memory and persists them in
+one transaction per batch from a background worker, so N slow commits (one
+fsync each) become one. Subclass it and implement `#perform(batch)`; the batch
+runs in the worker thread, so a connection resolved there is the worker's own:
+
+```ruby
+class ViewWriter < Izen::Base::Batcher
+  def perform(batch)
+    db.transaction { batch.each { |row| db.execute(INSERT, row) } }
+  end
+end
+
+VIEWS = ViewWriter.new(interval: 2, max_size: 500)
+VIEWS.push(row) # returns immediately
+```
+
+The buffer lives in memory: items not yet flushed are lost on `SIGKILL` or a
+crash, but a graceful shutdown flushes them (the native server calls
+`Batcher.flush_all`). Use it for analytics-like data, not transactions.
 
 ## The CLI
 
