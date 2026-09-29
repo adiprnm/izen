@@ -6,8 +6,8 @@ module Izen
     #
     # `Dockerfile.native` lives at the project root next to the app's own
     # `Dockerfile` (and `config/deploy.native.yml` next to `config/deploy.yml`).
-    # `izen new` scaffolds both; `izen native build` writes the Dockerfile when
-    # it is missing so an existing project keeps working.
+    # `izen new` scaffolds both; any `izen native` command writes the Dockerfile
+    # when it is missing so an existing project keeps working.
     #
     # The Dockerfile is built with the generated `native/` directory as the
     # build context (see `builder.context` in the native deploy config), so the
@@ -20,7 +20,7 @@ module Izen
           # syntax=docker/dockerfile:1
           # Build the Spinel binary from the packed C sources, then ship a minimal
           # runtime image. Build context is the generated native/ directory (see
-          # builder.context in config/deploy.native.yml); run `izen native build`
+          # builder.context in config/deploy.native.yml); run `izen native pack`
           # first so native/pack exists.
           FROM debian:bookworm-slim AS build
           RUN apt-get update -qq \\

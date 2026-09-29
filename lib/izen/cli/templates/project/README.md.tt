@@ -52,7 +52,7 @@ deploy. Fill in the placeholder server, host and image, export the secrets, then
 build and ship the native binary:
 
 ```sh
-bundle exec izen native build
+bundle exec izen native pack
 export SESSION_SECRET=$(openssl rand -hex 32)
 export APP_ENCRYPTION_KEY=$(openssl rand -hex 32)
 bundle exec izen native kamal setup       # first time
@@ -64,8 +64,9 @@ arguments are deploy options (`-d staging`, `--skip-push`, ...). Use
 `bundle exec izen native kamal <args>` for any other Kamal command (e.g.
 `izen native kamal setup`, `izen native kamal app logs`).
 
-`izen native build` lowers the app to a [Spinel](https://github.com/matz/spinel)
-project in `native/` — one native binary, no interpreter, no Rack, no Puma. The
+`izen native pack` lowers the app to a [Spinel](https://github.com/matz/spinel)
+project in `native/` — one native binary, no interpreter, no Rack, no Puma — and
+writes `pack/`, which the image builds from. The
 native image is built from the tracked `Dockerfile.native` at the project root,
 with `native/` (holding `pack/`) as the build context; `config/deploy.native.yml`
 pins both. The SQLite database and the session secret live on the

@@ -298,12 +298,12 @@ The generated runtime is written to Spinel's subset. A few non-obvious rules
 `.kamal/secrets-common` (git-ignored) reads `SESSION_SECRET` /
 `APP_ENCRYPTION_KEY` from the environment for both configs.
 
-Fill in the placeholder server, host and image, then build and deploy the
+Fill in the placeholder server, host and image, then pack and deploy the
 native binary **from the project root** (Kamal resolves `Dockerfile.native`
 relative to the working directory and `native/` as the build context):
 
 ```sh
-izen native build
+izen native pack              # refresh native/pack (what the image builds from)
 export SESSION_SECRET=$(openssl rand -hex 32)
 export APP_ENCRYPTION_KEY=$(openssl rand -hex 32)
 izen native kamal setup       # first time: provision server/registry/volume
@@ -315,7 +315,7 @@ arguments are deploy options (`-d staging`, `--skip-push`, ...). Use
 `izen native kamal <args>` for any other Kamal command (e.g.
 `izen native kamal setup`, `izen native kamal app logs`).
 
-`izen native build` lowers the app to a Spinel project in `native/` and writes
+`izen native pack` lowers the app to a Spinel project in `native/` and writes
 `Dockerfile.native` / `config/deploy.native.yml` if they are missing (existing
 projects upgrade transparently; your edits are never overwritten). The SQLite
 database and the persisted session secret live on the `<name>_native_storage`

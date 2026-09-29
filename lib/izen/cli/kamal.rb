@@ -18,15 +18,14 @@ module Izen
         slug = slug(name)
 
         <<~YAML
-          # Kamal deployment configuration for #{name}.
+          # Kamal deployment configuration for #{name} (CRuby/Puma).
           #
-          # `izen new` writes this at the project root. `izen native build`
-          # copies it into the generated native/ project (patching the proxy
-          # port), which is where the Dockerfile and pack/ build context live.
-          # Deploy the native binary with:
+          # `izen new` writes this at the project root as a starting point: fill
+          # in the server, host and registry, and ship it with your own
+          # Dockerfile. For the native (Spinel) build, use config/deploy.native.yml
+          # and Dockerfile.native instead.
           #
-          #   izen native build
-          #   cd native && kamal setup    # first time; then: kamal deploy
+          #   kamal -c config/deploy.yml setup    # first time; then: deploy
           #
           # Docs: https://kamal-deploy.org/docs/configuration/
 
@@ -96,12 +95,12 @@ module Izen
           # `izen new` writes this next to the CRuby config (config/deploy.yml).
           # The native server listens on :3000, the image is built from the
           # project-root Dockerfile, and the build context is the generated
-          # #{context}/ directory that holds pack/ (run `izen native build`
+          # #{context}/ directory that holds pack/ (run `izen native pack`
           # first). Deploy from the project root with:
           #
-          #   izen native build
-          #   kamal -c config/deploy.native.yml setup    # first time
-          #   kamal -c config/deploy.native.yml deploy   # afterwards
+          #   izen native pack
+          #   izen native kamal setup    # first time
+          #   izen native deploy         # afterwards
           #
           # Docs: https://kamal-deploy.org/docs/configuration/
 
