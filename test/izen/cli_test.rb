@@ -283,11 +283,11 @@ class CliTest < TestSupport::DatabaseTest
       Izen::Cli.native_kamal_command(Izen::Cli.native_deploy_args([]))
   end
 
-  def test_native_deploy_forwards_subcommands_and_destinations
-    assert_equal %w[kamal -c config/deploy.native.yml setup],
-      Izen::Cli.native_kamal_command(Izen::Cli.native_deploy_args(%w[setup]))
-    assert_equal %w[kamal -c config/deploy.native.yml -d staging redeploy],
-      Izen::Cli.native_kamal_command(Izen::Cli.native_deploy_args(%w[-d staging redeploy]))
+  def test_native_deploy_always_runs_the_deploy_subcommand_with_the_given_options
+    assert_equal %w[kamal -c config/deploy.native.yml deploy -d staging],
+      Izen::Cli.native_kamal_command(Izen::Cli.native_deploy_args(%w[-d staging]))
+    assert_equal %w[kamal -c config/deploy.native.yml deploy --skip-push],
+      Izen::Cli.native_kamal_command(Izen::Cli.native_deploy_args(%w[--skip-push]))
   end
 
   def test_native_kamal_prefers_bundle_exec_when_the_app_bundles_kamal

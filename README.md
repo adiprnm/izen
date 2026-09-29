@@ -306,14 +306,14 @@ relative to the working directory and `native/` as the build context):
 izen native build
 export SESSION_SECRET=$(openssl rand -hex 32)
 export APP_ENCRYPTION_KEY=$(openssl rand -hex 32)
-izen native deploy setup      # first time
-izen native deploy            # afterwards
+izen native kamal setup       # first time: provision server/registry/volume
+izen native deploy            # build + rolling deploy
 ```
 
-`izen native deploy` runs `kamal -c config/deploy.native.yml` and forwards
-anything you pass to Kamal (`setup`, `redeploy`, `-d staging`, ...). Use
+`izen native deploy` runs `kamal -c config/deploy.native.yml deploy`; its
+arguments are deploy options (`-d staging`, `--skip-push`, ...). Use
 `izen native kamal <args>` for any other Kamal command (e.g.
-`izen native kamal app logs`).
+`izen native kamal setup`, `izen native kamal app logs`).
 
 `izen native build` lowers the app to a Spinel project in `native/` and writes
 `Dockerfile.native` / `config/deploy.native.yml` if they are missing (existing

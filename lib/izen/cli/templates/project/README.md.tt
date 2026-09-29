@@ -55,14 +55,14 @@ build and ship the native binary:
 bundle exec izen native build
 export SESSION_SECRET=$(openssl rand -hex 32)
 export APP_ENCRYPTION_KEY=$(openssl rand -hex 32)
-bundle exec izen native deploy setup      # first time
+bundle exec izen native kamal setup       # first time
 bundle exec izen native deploy            # afterwards
 ```
 
-`izen native deploy` runs `kamal -c config/deploy.native.yml` and forwards its
-arguments to Kamal (`setup`, `redeploy`, `-d staging`, ...). For any other Kamal
-command use `bundle exec izen native kamal <args>` (e.g.
-`izen native kamal app logs`).
+`izen native deploy` runs `kamal -c config/deploy.native.yml deploy`; its
+arguments are deploy options (`-d staging`, `--skip-push`, ...). Use
+`bundle exec izen native kamal <args>` for any other Kamal command (e.g.
+`izen native kamal setup`, `izen native kamal app logs`).
 
 `izen native build` lowers the app to a [Spinel](https://github.com/matz/spinel)
 project in `native/` — one native binary, no interpreter, no Rack, no Puma. The

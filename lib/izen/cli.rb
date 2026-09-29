@@ -315,28 +315,31 @@ module Izen
       puts Style.removed(relative(options[:out]))
     end
 
-    # `izen native deploy [kamal args...]`: deploy the native binary with the
-    # native Kamal config. With no arguments it runs the `deploy` subcommand;
-    # anything else (`setup`, `redeploy`, `-d staging`, ...) is forwarded to
-    # Kamal verbatim.
+    # `izen native deploy [options...]`: deploy the native binary with the
+    # native Kamal config. Everything is passed to Kamal's `deploy` command, so
+    # the arguments are deploy options:
     #
-    #   izen native deploy
-    #   izen native deploy setup
-    #   izen native deploy -d staging redeploy
+    #   izen native deploy                  # kamal ... deploy
+    #   izen native deploy -d staging       # kamal ... deploy -d staging (staging.adipurnm...)
+    #   izen native deploy --skip-push      # kamal ... deploy --skip-push
+    #
+    # Kamal only runs `deploy` when the subcommand is explicit, so it is always
+    # inserted here. Use `izen native kamal` for setup/rollback/logs/...
     def native_deploy(argv)
       native_kamal(native_deploy_args(argv))
     end
 
-    # The Kamal argv `native deploy` forwards: `deploy` unless the caller named
-    # a subcommand (or flags, which Kamal defaults to `deploy` for).
+    # The Kamal argv `native deploy` drives: always the `deploy` subcommand, with
+    # the caller's arguments forwarded as its options.
     def native_deploy_args(argv)
-      argv.empty? ? [ "deploy" ] : argv
+      [ "deploy", *argv ]
     end
 
     # `izen native kamal <args...>`: raw Kamal escape hatch bound to the native
     # config, for commands `native deploy` does not wrap.
     #
     #   izen native kamal app logs
+    #   izen native kamal -d staging setup
     #   izen native kamal config
     def native_kamal(argv)
       config  = "config/deploy.native.yml"
@@ -418,8 +421,9 @@ module Izen
         "  #{Style.command('izen native generate --spinel')}",
         "  #{Style.command('izen native build --spinel-bin ~/tools/spinel/bin')}",
         "  #{Style.command('izen native run --port 3000')}",
-        "  #{Style.command('izen native deploy setup')}",
-        "  #{Style.command('izen native deploy -d staging')}"
+        "  #{Style.command('izen native deploy')}",
+        "  #{Style.command('izen native deploy -d staging')}",
+        "  #{Style.command('izen native kamal -d staging setup')}"
       ].join("\n")
     end
 
