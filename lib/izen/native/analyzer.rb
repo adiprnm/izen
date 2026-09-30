@@ -431,6 +431,26 @@ fragment].include?(node.name) && node.arguments
         top_level_requires(tree, source)
       end
 
+      # Top-level `ENV[...] = ...` assignments from app.rb (typically
+      # `ENV["TZ"] = "Asia/Jakarta"`). The CRuby app applies these before any
+      # request; the generated Spinel boot must replay them too, or libc's
+      # localtime falls back to the container zone (usually UTC) and every
+      # "time of day" decision is off.
+      def app_env
+        source = File.read(File.join(root, "app.rb"))
+        tree   = Prism.parse(source).value
+        tree.statements.body.filter_map do |statement|
+          next unless statement.is_a?(Prism::CallNode) && statement.name == :[]=
+          next unless env_receiver?(statement.receiver)
+
+          Node.slice(source, statement)
+        end
+      end
+
+      def env_receiver?(node)
+        node.is_a?(Prism::ConstantReadNode) && node.name == :ENV
+      end
+
       # Helper methods the App exposes: the `def`s directly on the App class
       # body plus every method of the modules it `include`s (and, recursively,
       # the modules those include). Each entry carries the parameter list and

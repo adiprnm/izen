@@ -52,6 +52,7 @@ module Izen
         write_contracts
         write_repositories
         write_app_helpers
+        write_env
         write_constants
         write_controller_helpers
         write_views
@@ -311,6 +312,19 @@ module Izen
         File.write(File.join(@out, "generated", "app_helpers.rb"), out)
       end
 
+      # Top-level `ENV[...] = ...` assignments from the source app.rb, replayed
+      # in the generated boot before anything reads the clock. The timezone in
+      # particular must be set here: CRuby calls tzset on the assignment, but
+      # the native runtime's localtime would otherwise use the container's zone
+      # (UTC on the deploy image).
+      def write_env
+        assignments = @an.app_env
+        out         = +"# frozen_string_literal: true\n\n"
+        out << "# Top-level ENV assignments from the source app.rb (e.g. the timezone).\n"
+        assignments.each { |statement| out << "#{statement}\n" }
+        File.write(File.join(@out, "generated", "env.rb"), out)
+      end
+
       # Top-level constants from app.rb (ROUTES, PERIOD_OPTIONS, …) that the
       # copied lib helpers and views reference.
       def write_constants
@@ -477,6 +491,7 @@ module Izen
 
       def write_requires
         out = +"# frozen_string_literal: true\n\n"
+        out << "require_relative \"env\"\n"
         out << "require_relative \"constants\"\n"
         out << "require_relative \"app_helpers\"\n"
         out << "require_relative \"controller_helpers\"\n"

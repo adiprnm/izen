@@ -119,6 +119,24 @@ class NativeTest < Minitest::Test
     body = App.new.call(Request.new("GET", "/", "", "", {})).body
     puts(body.include?("Hello from Demo") ? "ALL OK" : "FAIL")
   RUBY
+  # The generated boot must replay top-level `ENV[...] = ...` assignments from
+  # the source app.rb, so a timezone set there actually reaches libc's clock.
+  TZ_DRIVER    = <<~'RUBY'
+    # frozen_string_literal: true
+    ENV["APP_ENV"] = "test"
+    root = ARGV[0]
+    Dir.chdir(root)
+    require File.join(root, "app.rb")
+
+    def check(label, condition)
+      puts "#{condition ? 'ok' : 'FAIL'} #{label}"
+      exit 1 unless condition
+    end
+
+    check "env assignment replayed", ENV["TZ"] == "Asia/Jakarta"
+    check "timezone offset applied",  Time.now.utc_offset == 7 * 3600
+    puts "ALL OK"
+  RUBY
 
   def test_generates_a_runnable_project_from_a_scaffolded_app
     Dir.mktmpdir("izen-native") do |dir|
@@ -268,6 +286,32 @@ class NativeTest < Minitest::Test
       refute_includes views, "case template"
 
       output = run_driver(out, PLAIN_DRIVER)
+      assert_includes output, "ALL OK", "driver output:\n#{output}"
+    end
+  end
+
+  # app.rb may configure the process environment at the top level; the
+  # canonical case is `ENV["TZ"]`, which the CRuby app applies so `Time.now`
+  # is local. The generated boot only replays the pieces the analyzer
+  # extracts, so those assignments must be carried over too.
+  def test_carries_top_level_env_assignments_from_app_rb
+    Dir.mktmpdir("izen-native") do |dir|
+      source = scaffold_project(dir)
+      app_rb = File.join(source, "app.rb")
+      File.write(app_rb, File.read(app_rb) + "\nENV[\"TZ\"] = \"Asia/Jakarta\"\n")
+
+      out = File.join(dir, "native")
+      Izen::Native::Generator.new(source, out).run
+
+      assert_includes File.read(File.join(out, "generated", "env.rb")), 'ENV["TZ"] = "Asia/Jakarta"'
+
+      requires = File.read(File.join(out, "generated", "requires.rb"))
+      assert_operator requires.index('require_relative "env"'),
+        :<,
+        requires.index('require_relative "constants"'),
+        "env must load before constants"
+
+      output = run_driver(out, TZ_DRIVER)
       assert_includes output, "ALL OK", "driver output:\n#{output}"
     end
   end
