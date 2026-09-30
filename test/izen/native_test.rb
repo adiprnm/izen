@@ -52,6 +52,20 @@ class NativeTest < Minitest::Test
     written.write("!")
     check "response write",   written.status == 401 && written.body == '{"error":"Unauthorized"}!'
 
+    # `request.halt` must not carry an empty-string body: the dispatcher only
+    # overwrites the response body when `halt.body` is truthy, and "" is truthy.
+    def halted(status = nil, message = :none)
+      request = Request.new("GET", "/", "", "", {})
+      message == :none ? request.halt(status) : request.halt(status, message)
+      nil
+    rescue Halt => e
+      e
+    end
+
+    check "halt defaults",     !halted.nil? && halted.status.nil? && halted.body.nil?
+    check "halt status only",  halted(403).status == 403 && halted(403).body.nil?
+    check "halt with message", halted(403, "nope").body == "nope"
+
     # CSRF enforcement: the generated route table calls `check_csrf!` on every
     # non-/api/ request, so the runtime must actually verify the token.
     class CsrfHarness

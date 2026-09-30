@@ -34,7 +34,9 @@ module Base
     def logger = app.logger
     def headers = app.response.headers
 
-    def halt(status = nil, message = "")
+    # Roda's `r.halt`: the message defaults to nil so a body already written
+    # (e.g. `json_response`) is not cleared by the dispatcher's rescue.
+    def halt(status = nil, message = nil)
       request.halt(status, message)
     end
 

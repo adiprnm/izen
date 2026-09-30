@@ -154,8 +154,11 @@ class Request
   end
 
   # Matches Roda's `r.halt`. With no status/body it just unwinds, leaving the
-  # response the controller already set (Roda allows `r.halt`).
-  def halt(status = nil, message = "")
+  # response the controller already set (Roda allows `r.halt`). The message
+  # defaults to nil, not "": an empty String is truthy, so the dispatcher's
+  # `@response.body = halt.body if halt.body` would otherwise wipe a body that
+  # was already written (e.g. `json_response` before `request.halt`).
+  def halt(status = nil, message = nil)
     raise Halt.new(status, message)
   end
 
