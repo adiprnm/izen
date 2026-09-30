@@ -24,4 +24,12 @@ class Response
     @headers["Location"] = location
     @body                = ""
   end
+
+  # Rack::Response#write appends to the body; helpers that build a response
+  # incrementally (e.g. `json_response(401, ...)`) rely on it.
+  def write(chunk)
+    text  = chunk.to_s
+    @body = "#{@body}#{text}"
+    text
+  end
 end

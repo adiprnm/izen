@@ -45,6 +45,13 @@ class NativeTest < Minitest::Test
     check "deleted",         !req("GET", "/widgets").body.include?("Bolt")
     check "not found",       req("GET", "/nope").status == 404
 
+    # Rack::Response#write (used by `json_response` on the 401 path).
+    written = Response.new
+    written.status = 401
+    written.write('{"error":"Unauthorized"}')
+    written.write("!")
+    check "response write",   written.status == 401 && written.body == '{"error":"Unauthorized"}!'
+
     # CSRF enforcement: the generated route table calls `check_csrf!` on every
     # non-/api/ request, so the runtime must actually verify the token.
     class CsrfHarness
