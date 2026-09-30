@@ -2,8 +2,8 @@
 
 require "izen"
 
-# Resolve config/database.yaml, migrations/, app/ and views/ against this file's
-# directory instead of the process working directory.
+# Resolve config/database.yaml, migrations/ and app/ (which also holds the
+# views) against this file's directory instead of the process working directory.
 Izen.configure do |config|
   config.root = File.expand_path(__dir__)
 end

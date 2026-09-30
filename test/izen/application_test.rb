@@ -32,7 +32,7 @@ class ApplicationTest < Minitest::Test
 
   def test_anchors_root_and_views_to_the_application_root
     assert_equal Izen.root, App.opts[:root]
-    assert_equal File.join(Izen.root, "views"), App.opts[:render][:views]
+    assert_equal File.join(Izen.root, "app"), App.opts[:render][:views]
   end
 
   def test_derives_the_session_cookie_key_from_the_class_name

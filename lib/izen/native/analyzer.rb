@@ -132,8 +132,10 @@ module Izen
         end
       end
 
+      # Views live next to the code they belong to: `app/<mod>/<view>.erb` for
+      # module views and `app/layout.erb` (or `app/layouts/*.erb`) for layouts.
       def view_files
-        Dir[File.join(root, "views/**/*.erb")].sort
+        Dir[File.join(root, "app/**/*.erb")].sort
       end
 
       def lib_files

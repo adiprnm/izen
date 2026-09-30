@@ -6,9 +6,10 @@
 # deliberately boring. See README.md for the full story.
 module Izen
   class << self
-    # Host application root: where config/database.yaml, migrations/, app/ and
-    # views/ live. Defaults to the current working directory so the gem works
-    # without configuration when the app runs from its own root.
+    # Host application root: where config/database.yaml, migrations/, app/
+    # (including the views) and storage/ live. Defaults to the current working
+    # directory so the gem works without configuration when the app runs from
+    # its own root.
     attr_writer :root
 
     def root

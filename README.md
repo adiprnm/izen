@@ -50,8 +50,8 @@ Izen.configure do |config|
 end
 ```
 
-The root is where `config/database.yaml`, `migrations/`, `storage/`, `app/`,
-`views/` and `.env` live.
+The root is where `config/database.yaml`, `migrations/`, `storage/`, `app/`
+(which also holds the views) and `.env` live.
 
 ## The application class
 
@@ -66,9 +66,10 @@ class App < Izen::Application
 end
 ```
 
-It enables `:render` (views under `Izen.root/views`), `:flash` and the
-signed-cookie `:memory_session` plugin, deriving the session cookie name from
-the subclass name (`App` → `app_session`).
+It enables `:render` (views live under `Izen.root/app`, colocated next to the
+module that owns them, with the shared layout at `Izen.root/app/layout.erb`),
+`:flash` and the signed-cookie `:memory_session` plugin, deriving the session
+cookie name from the subclass name (`App` → `app_session`).
 
 It also enables `:all_verbs` so routes can match `r.put`, `r.patch` and
 `r.delete`, and installs `Rack::MethodOverride` so a form — which can only
@@ -121,7 +122,7 @@ izen module new post title:string body:text    # scaffold a domain module
 ```
 
 `izen new` writes a runnable Roda + SQLite skeleton: `app.rb`, `config.ru`,
-`config/database.yaml`, `views/layout.erb`, `Rakefile`, `README.md`,
+`config/database.yaml`, `app/layout.erb`, `Rakefile`, `README.md`,
 `.env.example`, a smoke test, and the `app/`, `migrations/` and `storage/`
 directories. It also scaffolds a Kamal deploy setup — `config/deploy.yml`
 (CRuby), `config/deploy.native.yml` and `Dockerfile.native` (native) and
@@ -135,9 +136,10 @@ deploy template (`config/deploy.native.yml`) and `Dockerfile.native` are kept
 tracked. Pass `--force` to scaffold
 into a non-empty directory or `--no-test` to skip the test files.
 
-`izen module new` writes `app/<name>/{model,contract,repository,controller}.rb`,
-colocated tests, views, a migration and a route entry in `app.rb`. The module
-name is **singular** (`post`, `blog_post`): the namespace, directory and views
+`izen module new` writes
+`app/<name>/{model,contract,repository,controller}.rb`, colocated tests and
+views (`app/<name>/<view>.erb`), a migration and a route entry in `app.rb`. The
+module name is **singular** (`post`, `blog_post`): the namespace and directory
 use it as-is, while the SQL table and the routes are **plural** (`posts`,
 `blog_posts`) — the generator pluralises for you. Passing a plural name aborts
 with the singular form to use.
@@ -174,7 +176,7 @@ in a Spinel-compatible subset; only the metaprogrammed DSLs are lowered:
 | `params { required/optional }` | `self.fields` spec |
 | `rule { ... }` | `rules` method |
 | `route do \|r\| ... end` | explicit `if`/`return` dispatcher |
-| `views/**/*.erb` | precompiled Ruby (Erubi codegen, byte-identical to Tilt) |
+| `app/**/*.erb` | precompiled Ruby (Erubi codegen, byte-identical to Tilt) |
 | `Repository#model_class` | static `to_model`/`to_models` per repository |
 
 ```sh

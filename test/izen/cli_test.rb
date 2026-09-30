@@ -66,7 +66,7 @@ class CliTest < TestSupport::DatabaseTest
     assert File.file?(File.join(project, "config", "deploy.native.yml"))
     assert File.file?(File.join(project, "Dockerfile.native"))
     assert File.file?(File.join(project, ".kamal", "secrets-common"))
-    assert File.file?(File.join(project, "views", "layout.erb"))
+    assert File.file?(File.join(project, "app", "layout.erb"))
     assert File.file?(File.join(project, "test", "test_helper.rb"))
     assert File.file?(File.join(project, "test", "native_scenarios.rb"))
     assert File.file?(File.join(project, ".gitignore"))
@@ -253,7 +253,7 @@ class CliTest < TestSupport::DatabaseTest
 
     assert File.file?(File.join(dir, "app", "post", "model.rb"))
     assert File.file?(File.join(dir, "app", "post", "repository.rb"))
-    assert File.file?(File.join(dir, "views", "post", "index.erb"))
+    assert File.file?(File.join(dir, "app", "post", "index.erb"))
     assert File.file?(File.join(dir, "migrations", "000001_create_posts.up.sql"))
     assert_match(%r{CREATE TABLE posts}, File.read(File.join(dir, "migrations", "000001_create_posts.up.sql")))
     assert_match(%r{SELECT \* FROM posts}, File.read(File.join(dir, "app", "post", "repository.rb")))

@@ -10,7 +10,7 @@ require_relative "native_assets"
 module Izen
   module Cli
     # Scaffolds a brand new Izen project: a Roda app, a database config, the
-    # app/migrations/views/storage directories and the usual project files.
+    # app/migrations/storage directories and the usual project files.
     #
     #   Cli::ProjectGenerator.new("blog").call
     #
@@ -30,7 +30,7 @@ module Izen
         ".env.example"             => "env.example.tt",
         ".gitignore"               => "gitignore.tt",
         "config/database.yaml"     => "database.yaml.tt",
-        "views/layout.erb"         => "layout.erb.tt",
+        "app/layout.erb"           => "layout.erb.tt",
         "test/test_helper.rb"      => "test_helper.rb.tt",
         "test/app_test.rb"         => "app_test.rb.tt",
         "test/native_scenarios.rb" => "native_scenarios.rb.tt"

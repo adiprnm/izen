@@ -8,8 +8,8 @@ require_relative "inflector"
 
 module Izen
   module Cli
-    # Scaffolds a domain module: app files, colocated tests, views, a migration
-    # and a route entry in app.rb.
+    # Scaffolds a domain module: app files, colocated tests, colocated views
+    # (`app/<name>/<view>.erb`), a migration and a route entry in app.rb.
     #
     # The module name is **singular** (`post`, `blog_post`): the namespace,
     # directory and views use it as-is, while the SQL table and the routes are
@@ -90,10 +90,10 @@ module Izen
       end
 
       def write_view_files
-        write("views/#{@name}/index.erb", render("index.erb.tt"))
-        write("views/#{@name}/show.erb",  render("show.erb.tt"))
-        write("views/#{@name}/new.erb",   render("new.erb.tt"))
-        write("views/#{@name}/edit.erb",  render("edit.erb.tt"))
+        write("app/#{@name}/index.erb", render("index.erb.tt"))
+        write("app/#{@name}/show.erb",  render("show.erb.tt"))
+        write("app/#{@name}/new.erb",   render("new.erb.tt"))
+        write("app/#{@name}/edit.erb",  render("edit.erb.tt"))
       end
 
       def write_migration_file

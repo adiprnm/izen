@@ -20,8 +20,8 @@ module Izen
   #   end
   #
   # Plugins are configured in .inherited rather than in this class body so the
-  # views directory (Izen.root/views) is resolved *after* the host app calls
-  # Izen.configure, not when the gem is first required.
+  # app directory (Izen.root/app, which holds the views) is resolved *after*
+  # the host app calls Izen.configure, not when the gem is first required.
   #
   # :all_verbs adds the r.put / r.delete / r.patch matchers (Roda only ships
   # r.get and r.post), and Rack::MethodOverride lets an HTML form — which can
@@ -34,7 +34,7 @@ module Izen
 
         subclass.opts[:root] = Izen.root
         subclass.plugin :all_verbs
-        subclass.plugin :render, views: "views"
+        subclass.plugin :render, views: "app"
         subclass.plugin :flash
         subclass.plugin :memory_session, key: "#{session_key(subclass)}_session"
         subclass.use Rack::MethodOverride

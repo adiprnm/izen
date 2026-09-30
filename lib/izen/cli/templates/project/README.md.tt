@@ -20,8 +20,8 @@ bundle exec izen dev
 | Path | Purpose |
 |---|---|
 | `app.rb` | Roda application (routes live here) |
-| `app/` | Domain modules (`model`, `contract`, `repository`, `controller`) |
-| `views/` | ERB templates |
+| `app/` | Domain modules (`model`, `contract`, `repository`, `controller`, colocated views) |
+| `app/layout.erb` | Shared ERB layout |
 | `migrations/` | Versioned up/down SQL migrations |
 | `config/database.yaml` | SQLite path per `APP_ENV` |
 | `storage/` | SQLite databases and the session secret |

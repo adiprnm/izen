@@ -330,14 +330,14 @@ module Izen
         File.write(File.join(@out, "generated", "views.rb"), out)
       end
 
-      # A layout is a template under `views/layouts/` or `views/layout.erb`.
-      # (`views/admin/products/layout_edit.erb` is a normal view.)
+      # A layout is a template under `app/layouts/` or `app/layout.erb`.
+      # (`app/admin/products/layout_edit.erb` is a normal view.)
       def layout_file?(path)
-        path.include?("/views/layouts/") || File.basename(path) == "layout.erb"
+        path.include?("/app/layouts/") || File.basename(path) == "layout.erb"
       end
 
       # The layout applied when a `render`/`view` call does not pass one: the
-      # app's `plugin :render, layout: ...`, or a bare `views/layout.erb`.
+      # app's `plugin :render, layout: ...`, or a bare `app/layout.erb`.
       def default_layout(layout_files)
         return @an.view_layout if @an.view_layout
 
@@ -419,7 +419,7 @@ module Izen
       end
 
       def template_name(path)
-        path.sub("#{@source}/views/", "").sub(/\.erb\z/, "")
+        path.sub("#{@source}/app/", "").sub(/\.erb\z/, "")
       end
 
       # --- routes -----------------------------------------------------------
