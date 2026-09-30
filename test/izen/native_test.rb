@@ -45,6 +45,33 @@ class NativeTest < Minitest::Test
     check "deleted",         !req("GET", "/widgets").body.include?("Bolt")
     check "not found",       req("GET", "/nope").status == 404
 
+    # CSRF enforcement: the generated route table calls `check_csrf!` on every
+    # non-/api/ request, so the runtime must actually verify the token.
+    class CsrfHarness
+      include Helpers
+      attr_accessor :request, :session
+    end
+
+    def csrf_status(session, method, path, body, headers = { "content-type" => "application/x-www-form-urlencoded" })
+      harness         = CsrfHarness.new
+      harness.session = session
+      harness.request = Request.new(method, path, "", body, headers)
+      begin
+        harness.check_csrf!
+        nil
+      rescue Halt => e
+        e.status
+      end
+    end
+
+    check "csrf safe method",     csrf_status({ "csrf" => "abc" }, "GET", "/widgets", "").nil?
+    check "csrf missing rejected", csrf_status({ "csrf" => "abc" }, "POST", "/widgets", "name=x") == 403
+    check "csrf wrong rejected",   csrf_status({ "csrf" => "abc" }, "POST", "/widgets", "name=x&_csrf=zzz") == 403
+    check "csrf no session",       csrf_status({}, "POST", "/widgets", "name=x&_csrf=abc") == 403
+    check "csrf field accepted",   csrf_status({ "csrf" => "abc" }, "POST", "/widgets", "name=x&_csrf=abc").nil?
+    check "csrf roda field",       csrf_status({ "csrf" => "abc" }, "POST", "/widgets", "name=x&authenticity_token=abc").nil?
+    check "csrf header accepted",  csrf_status({ "csrf" => "abc" }, "POST", "/widgets", "", { "content-type" => "application/x-www-form-urlencoded", "x-csrf-token" => "abc" }).nil?
+
     request = Request.new("GET", "/", "", "", { "cf-connecting-ip" => "198.51.100.7", "x-forwarded-for" => "203.0.113.9, 10.0.0.1", "hx-request" => "true" })
     check "env rack keys",   request.env["HTTP_CF_CONNECTING_IP"] == "198.51.100.7" && request.env["HTTP_HX_REQUEST"] == "true"
     check "ip first xff",    request.ip == "203.0.113.9"

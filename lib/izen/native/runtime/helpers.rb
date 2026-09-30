@@ -2,6 +2,7 @@
 
 require_relative "base64"
 require_relative "secure_random"
+require_relative "rack_utils"
 
 # Generic view helpers for the generated application. The render scope is the
 # App instance, so templates and controllers share these methods. App-specific
@@ -33,11 +34,23 @@ module Helpers
     %(<meta name="csrf-token" content="#{h csrf_token}">)
   end
 
-  # The native server enforces CSRF; the generated route table still calls this
-  # guard, so provide a no-op (Roda's :route_csrf plugin does the real work on
-  # CRuby).
+  # The generated route table calls this guard on every non-`/api/` request
+  # (mirroring `check_csrf! unless r.path_info.start_with?("/api/")` in
+  # `app.rb`), so this is where the native server enforces CSRF. It matches the
+  # app's `plugin :route_csrf, field: "authenticity_token", check_header: true,
+  # require_request_specific_tokens: false`: safe methods pass, otherwise the
+  # token must arrive as the hidden field (`_csrf`, the name `csrf_field`
+  # emits, or `authenticity_token`) or the `X-CSRF-Token` header and equal the
+  # session token. Failure halts with an empty 403 (`csrf_failure: :empty_403`).
   def check_csrf!
-    nil
+    method = request.request_method
+    return if method == "GET" || method == "HEAD" || method == "OPTIONS" || method == "TRACE"
+
+    expected = session["csrf"].to_s
+    provided = (params["_csrf"] || params["authenticity_token"] || request.header("x-csrf-token")).to_s
+    return if !expected.empty? && !provided.empty? && Rack::Utils.secure_compare(expected, provided)
+
+    request.halt(403, "")
   end
 
   # Roda's render: like `view` but without the layout (htmx fragments).
