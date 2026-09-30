@@ -32,7 +32,14 @@ module Base
         value        = (raw.nil? || !strict) ? raw : Types.coerce(raw, spec[:type])
         @attrs[name] = value
       end
+
+      after_initialize
     end
+
+    # Hook for generated subclasses: they mirror each attribute into a real
+    # instance variable (Spinel cannot set ivars dynamically), so custom
+    # methods copied from the source keep working.
+    def after_initialize; end
 
     def to_h
       @attrs

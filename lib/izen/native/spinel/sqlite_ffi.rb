@@ -65,20 +65,33 @@ class SqliteAdapter
 
   def transaction
     @monitor.synchronize do
-      execute("BEGIN")
-      begin
-        result = yield
-        execute("COMMIT")
+      # Nested `transaction` blocks join the outer one (Sequel's default), so a
+      # repository that seeds inside its own transaction does not hit SQLite's
+      # "cannot start a transaction within a transaction".
+      if @transaction_depth.to_i > 0
+        @transaction_depth += 1
+        result              = yield
+        @transaction_depth -= 1
         result
-      rescue StandardError
-        # Release the write lock even when the block failed. A failing
-        # ROLLBACK must not mask the original error.
+      else
+        @transaction_depth = 1
+        execute("BEGIN")
         begin
-          execute("ROLLBACK")
+          result             = yield
+          execute("COMMIT")
+          @transaction_depth = 0
+          result
         rescue StandardError
-          nil
+          @transaction_depth = 0
+          # Release the write lock even when the block failed. A failing
+          # ROLLBACK must not mask the original error.
+          begin
+            execute("ROLLBACK")
+          rescue StandardError
+            nil
+          end
+          raise
         end
-        raise
       end
     end
   end

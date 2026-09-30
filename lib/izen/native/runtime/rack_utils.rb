@@ -124,6 +124,23 @@ module Rack
       parts.join("&")
     end
 
+    # Nested form encoding (Rack::Utils.build_nested_query): hashes become
+    # `key[sub]=v`, arrays become repeated `key[]=v`.
+    def build_nested_query(value, prefix = nil)
+      case value
+      when Array
+        value.map { |item| build_nested_query(item, "#{prefix}[]") }.join("&")
+      when Hash
+        value.map do |key, item|
+          build_nested_query(item, prefix ? "#{prefix}[#{escape(key)}]" : escape(key))
+        end.join("&")
+      when nil
+        escape(prefix.to_s)
+      else
+        "#{escape(prefix.to_s)}=#{escape(value.to_s)}"
+      end
+    end
+
     def secure_compare(a, b)
       left  = a.to_s
       right = b.to_s

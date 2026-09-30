@@ -1687,7 +1687,7 @@ module SHA512
     0x6a09e667f3bcc908, 0xbb67ae8584caa73b, 0x3c6ef372fe94f82b, 0xa54ff53a5f1d36f1,
     0x510e527fade682d1, 0x9b05688c2b3e6c1f, 0x1f83d9abfb41bd6b, 0x5be0cd19137e2179
   ].freeze
-  K = [
+  K  = [
     0x428a2f98d728ae22, 0x7137449123ef65cd, 0xb5c0fbcfec4d3b2f, 0xe9b5dba58189dbbc,
     0x3956c25bf348b538, 0x59f111f1b605d019, 0x923f82a4af194f9b, 0xab1c5ed5da6d8118,
     0xd807aa98a3030242, 0x12835b0145706fbe, 0x243185be4ee4b28c, 0x550c7dc3d5ffb4e2,
@@ -1752,19 +1752,19 @@ module SHA512
       w = Array.new(80, 0)
       i = 0
       while i < 16
-        b = offset + i * 8
+        b    = offset + i * 8
         w[i] = (((message[b] | BIG) << 56) | (message[b + 1] << 48) | (message[b + 2] << 40) |
                (message[b + 3] << 32) | (message[b + 4] << 24) | (message[b + 5] << 16) |
                (message[b + 6] << 8) | message[b + 7]) & MASK
         i += 1
       end
       while i < 80
-        x  = rd(w, i - 15)
-        y  = rd(w, i - 2)
-        s0 = rotr(x, 1) ^ rotr(x, 8) ^ (x >> 7)
-        s1 = rotr(y, 19) ^ rotr(y, 61) ^ (y >> 6)
+        x    = rd(w, i - 15)
+        y    = rd(w, i - 2)
+        s0   = rotr(x, 1) ^ rotr(x, 8) ^ (x >> 7)
+        s1   = rotr(y, 19) ^ rotr(y, 61) ^ (y >> 6)
         w[i] = (BIG + rd(w, i - 16) + s0 + rd(w, i - 7) + s1) & MASK
-        i += 1
+        i   += 1
       end
 
       a = rd(h, 0); b = rd(h, 1); c = rd(h, 2); d = rd(h, 3)
@@ -1777,21 +1777,172 @@ module SHA512
         s0  = rotr(a, 28) ^ rotr(a, 34) ^ rotr(a, 39)
         maj = (a & b) ^ (a & c) ^ (b & c)
         t2  = (BIG + s0 + maj) & MASK
-        hh = g; g = f; f = e; e = (BIG + d + t1) & MASK
-        d = c; c = b; b = a; a = (BIG + t1 + t2) & MASK
-        i += 1
+        hh  = g; g = f; f = e; e = (BIG + d + t1) & MASK
+        d   = c; c = b; b = a; a = (BIG + t1 + t2) & MASK
+        i  += 1
       end
 
-      h[0] = (BIG + rd(h, 0) + a) & MASK
-      h[1] = (BIG + rd(h, 1) + b) & MASK
-      h[2] = (BIG + rd(h, 2) + c) & MASK
-      h[3] = (BIG + rd(h, 3) + d) & MASK
-      h[4] = (BIG + rd(h, 4) + e) & MASK
-      h[5] = (BIG + rd(h, 5) + f) & MASK
-      h[6] = (BIG + rd(h, 6) + g) & MASK
-      h[7] = (BIG + rd(h, 7) + hh) & MASK
+      h[0]    = (BIG + rd(h, 0) + a) & MASK
+      h[1]    = (BIG + rd(h, 1) + b) & MASK
+      h[2]    = (BIG + rd(h, 2) + c) & MASK
+      h[3]    = (BIG + rd(h, 3) + d) & MASK
+      h[4]    = (BIG + rd(h, 4) + e) & MASK
+      h[5]    = (BIG + rd(h, 5) + f) & MASK
+      h[6]    = (BIG + rd(h, 6) + g) & MASK
+      h[7]    = (BIG + rd(h, 7) + hh) & MASK
       offset += 128
     end
     h
+  end
+end
+
+# --- Redcarpet (markdown -> HTML) ------------------------------------------
+# The app renders AI insight narratives as a small markdown subset (bold,
+# italics, inline code, links, bullet/ordered lists and paragraphs). Spinel has
+# no redcarpet, so this implements the surface the app calls.
+module Redcarpet
+  module Render
+    class HTML
+      attr_reader :options
+
+      def initialize(**options)
+        @options = options
+      end
+
+      def render(text)
+        Redcarpet.render(text, @options)
+      end
+    end
+  end
+
+  class Markdown
+    def initialize(renderer, **_options)
+      @renderer = renderer
+    end
+
+    def render(text)
+      @renderer.render(text.to_s)
+    end
+  end
+
+  class Renderer
+    def initialize(escape: false)
+      @escape = escape
+    end
+
+    def render(text)
+      out  = +""
+      list = nil
+      para = []
+
+      text.to_s.split("\n").each do |line|
+        stripped = line.strip
+        if stripped.empty?
+          out << paragraph(para)
+          para = []
+          out << close(list)
+          list = nil
+        elsif (match = stripped.match(/\A[-*]\s+(.*)\z/))
+          out << paragraph(para)
+          para = []
+          if list != :ul
+            out << close(list)
+            list = :ul
+            out << "<ul>"
+          end
+          out << "<li>" << inline(match[1]) << "</li>"
+        elsif (match = stripped.match(/\A\d+\.\s+(.*)\z/))
+          out << paragraph(para)
+          para = []
+          if list != :ol
+            out << close(list)
+            list = :ol
+            out << "<ol>"
+          end
+          out << "<li>" << inline(match[1]) << "</li>"
+        else
+          out << close(list)
+          list = nil
+          para << stripped
+        end
+      end
+
+      out << paragraph(para)
+      out << close(list)
+      out
+    end
+
+    private
+
+    def paragraph(lines)
+      return "" if lines.empty?
+
+      "<p>#{inline(lines.join(' '))}</p>"
+    end
+
+    def close(list)
+      list ? "</#{list}>" : ""
+    end
+
+    def inline(text)
+      out = @escape ? escape_html(text) : text.dup
+      out = out.gsub(/\*\*(.+?)\*\*/m) { "<strong>#{Regexp.last_match(1)}</strong>" }
+      out = out.gsub(/\*(.+?)\*/m) { "<em>#{Regexp.last_match(1)}</em>" }
+      out = out.gsub(/`([^`]+)`/) { "<code>#{Regexp.last_match(1)}</code>" }
+      out.gsub(/\[([^\]]+)\]\(([^)\s]+)\)/) { %(<a href="#{Regexp.last_match(2)}">#{Regexp.last_match(1)}</a>) }
+    end
+
+    def escape_html(text)
+      text.gsub("&", "&amp;").gsub("<", "&lt;").gsub(">", "&gt;").gsub('"', "&quot;")
+    end
+  end
+
+  def self.render(text, options = {})
+    Renderer.new(escape: options.fetch(:escape_html, false)).render(text)
+  end
+end
+
+# --- YAML (data files) -----------------------------------------------------
+# Spinel has no YAML. The app loads simple data files (`data/categories.yml`:
+# a top-level sequence of `- key: value` mappings with scalar values), so this
+# parses that subset.
+module YAML
+  module_function
+
+  def load_file(path)
+    return [] unless File.exist?(path.to_s)
+
+    load(File.read(path.to_s))
+  end
+
+  def load(text)
+    items   = []
+    current = nil
+    text.to_s.each_line do |line|
+      stripped = line.rstrip
+      next if stripped.empty? || stripped.start_with?("#")
+
+      if stripped.start_with?("- ")
+        current = {}
+        items << current
+        key, value   = pair(stripped[2, stripped.length])
+        current[key] = value unless key.nil?
+      elsif current && stripped.start_with?(" ")
+        key, value   = pair(stripped.strip)
+        current[key] = value unless key.nil?
+      end
+    end
+    items
+  end
+
+  def pair(text)
+    index = text.index(":")
+    return [ nil, nil ] unless index
+
+    key   = text[0, index].strip
+    value = text[index + 1, text.length].strip
+    value = value[1, value.length - 2] if value.length >= 2 && value.start_with?("\"") && value.end_with?("\"")
+    value = value[1, value.length - 2] if value.length >= 2 && value.start_with?("'") && value.end_with?("'")
+    [ key, value ]
   end
 end

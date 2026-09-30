@@ -20,6 +20,12 @@ module Base
       app.view(template, locals: locals, layout: layout)
     end
 
+    # Layout-less render for htmx fragments (Roda's `render`).
+    def fragment(template, locals = {}, **kwargs)
+      locals = locals.merge(kwargs)
+      app.render(template, locals: locals)
+    end
+
     def session = app.session
     def params = app.request.params
     def request = app.request
@@ -28,7 +34,7 @@ module Base
     def logger = app.logger
     def headers = app.response.headers
 
-    def halt(status, message = "")
+    def halt(status = nil, message = "")
       request.halt(status, message)
     end
 

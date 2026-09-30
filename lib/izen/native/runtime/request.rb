@@ -16,19 +16,19 @@ end
 
 # Rack-lite request. Only the surface this app uses.
 class Request
-  attr_accessor :response
+  attr_accessor :response, :flash
   attr_reader :headers
 
   def initialize(method, path, query = "", body = "", headers = {})
-    @request_method                                         = method.to_s.upcase
-    @path_info                                              = path
-    @query_string                                           = query
-    @raw_body                                               = body
-    @headers                                                = {}
-    @env                                                    = {}
+    @request_method        = method.to_s.upcase
+    @path_info             = path
+    @query_string          = query
+    @raw_body              = body
+    @headers               = {}
+    @env                   = {}
     headers.each do |key, value|
-      name           = key.to_s.downcase
-      @headers[name] = value
+      name                                     = key.to_s.downcase
+      @headers[name]                           = value
       # Rack-style key so app code that reads `env["HTTP_*"]`
       # (CF-Connecting-IP, HX-Request, X-CSRF-Token) behaves as it does on
       # Roda/Rack, instead of falling back to a shared default.
@@ -39,8 +39,8 @@ class Request
     @env["REQUEST_METHOD"] = @request_method
     @env["PATH_INFO"]      = @path_info
     @env["QUERY_STRING"]   = @query_string
-    @params                                                 = nil
-    @body_io                                                = StringIO.new(body)
+    @params                = nil
+    @body_io               = StringIO.new(body)
   end
 
   def request_method
@@ -57,6 +57,11 @@ class Request
 
   def query_string
     @query_string
+  end
+
+  # Roda/Rack request.fullpath: path plus the query string.
+  def fullpath
+    @query_string.to_s.empty? ? @path_info : "#{@path_info}?#{@query_string}"
   end
 
   def body
@@ -148,13 +153,17 @@ class Request
     end
   end
 
-  # Matches Roda's `r.halt`.
-  def halt(status, message = "")
+  # Matches Roda's `r.halt`. With no status/body it just unwinds, leaving the
+  # response the controller already set (Roda allows `r.halt`).
+  def halt(status = nil, message = "")
     raise Halt.new(status, message)
   end
 
   # Sets the response and unwinds (Roda's `r.redirect`).
-  def redirect(location, status = 302)
+  def redirect(location, status = 302, **flash)
+    # Roda's redirect accepts flash keys (`redirect(path, alert: "…")`); the
+    # dispatcher hands the app flash down via #flash before dispatching.
+    flash.each { |key, value| @flash[key.to_s] = value } if @flash
     response.redirect(location, status)
     raise Halt.new(nil, nil)
   end

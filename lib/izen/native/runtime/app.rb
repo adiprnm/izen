@@ -63,6 +63,7 @@ class App
     request.response = @response
     @session         = SessionCodec.decode(request.cookie(SESSION_KEY))
     @flash           = Flash.new(@session)
+    request.flash    = @flash
 
     begin
       request.params # parses the body and applies the _method override

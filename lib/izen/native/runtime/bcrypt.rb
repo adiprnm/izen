@@ -56,6 +56,11 @@ module BCrypt
       @hash == other.to_s.crypt(@hash)
     end
 
+    # Alias used by the app (`User#authenticate`).
+    def is_password?(password)
+      self == password
+    end
+
     def to_s
       @hash
     end

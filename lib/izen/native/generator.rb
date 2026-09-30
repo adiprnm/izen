@@ -24,17 +24,18 @@ module Izen
         izen roda rack rack/method_override rack/auth/basic rack/mime rack/test
         sqlite3 yaml securerandom date openssl logger bcrypt vips
         aws-sdk-s3 nokogiri sanitize rufus-scheduler mail minitest
-        minitest/autorun time
+        minitest/autorun time redcarpet
       ].freeze
 
       attr_reader :source, :out
 
       def initialize(source, out, spinel: false, name: nil)
-        @source = File.expand_path(source)
-        @out    = File.expand_path(out)
-        @an     = Analyzer.new(@source)
-        @spinel = spinel
-        @name   = sanitize_name(name || File.basename(@source))
+        @source          = File.expand_path(source)
+        @out             = File.expand_path(out)
+        @an              = Analyzer.new(@source)
+        @spinel          = spinel
+        @name            = sanitize_name(name || File.basename(@source))
+        @controller_base = @an.controller_base_class
       end
 
       def run
@@ -46,10 +47,12 @@ module Izen
         copy_overrides
         copy_lib
         copy_public
+        copy_data
         write_models
         write_contracts
         write_repositories
         write_app_helpers
+        write_constants
         write_controller_helpers
         write_views
         write_routes
@@ -73,7 +76,7 @@ module Izen
         end
 
         FileUtils.rm_rf(@out)
-        %w[runtime generated app db storage bin spinel lib].each do |dir|
+        %w[runtime generated app db storage bin spinel lib data].each do |dir|
           FileUtils.mkdir_p(File.join(@out, dir))
         end
       end
@@ -149,15 +152,20 @@ module Izen
       # lowered runtime declares the base classes as `Base::X`, so rewrite the
       # namespace to match before the compiler sees it.
       def rewrite_constants(source)
+        source = source
+                 .gsub("Izen::Base::", "Base::")
+                 .gsub("Izen::Database", "Database")
+                 .gsub("Izen::Encryptor", "Encryptor")
+                 .gsub("Izen::HTTP", "HTTP")
+                 # Spinel's bundled digest has no SHA512; the runtime shim provides a
+                 # top-level SHA512 (see shims.rb) to avoid shadowing CRuby's real
+                 # Digest::SHA512 class.
+                 .gsub("Digest::SHA512", "SHA512")
+        # Subclassing the app's controller base (`ApplicationController`) is
+        # rewritten to the lowered Base::Controller, which carries the helper
+        # delegators; Spinel resolves the inherited methods from there.
+        source = source.gsub(@controller_base, "Base::Controller") if @controller_base
         source
-          .gsub("Izen::Base::", "Base::")
-          .gsub("Izen::Database", "Database")
-          .gsub("Izen::Encryptor", "Encryptor")
-          .gsub("Izen::HTTP", "HTTP")
-          # Spinel's bundled digest has no SHA512; the runtime shim provides a
-          # top-level SHA512 (see shims.rb) to avoid shadowing CRuby's real
-          # Digest::SHA512 class.
-          .gsub("Digest::SHA512", "SHA512")
       end
 
       def copy_lib
@@ -171,8 +179,9 @@ module Izen
 
       def strip_requires(source)
         DROPPED_REQUIRES.each do |gem_name|
-          # Match both top-level requires and ones nested inside methods/classes.
-          source = source.gsub(/^\s*require ["']#{Regexp.escape(gem_name)}["']\s*\n/, "")
+          # Match both top-level requires and ones nested inside methods/classes,
+          # including a trailing comment (`require "x" # note`).
+          source = source.gsub(/^\s*require ["']#{Regexp.escape(gem_name)}["'][^\n]*\n/, "")
         end
         source
       end
@@ -182,37 +191,58 @@ module Izen
         FileUtils.cp_r(directory, File.join(@out, "public")) if File.directory?(directory)
       end
 
+      # YAML data files (e.g. data/categories.yml) the app loads at runtime.
+      def copy_data
+        directory = File.join(@source, "data")
+        return unless File.directory?(directory)
+
+        target = File.join(@out, "data")
+        FileUtils.mkdir_p(target)
+        Dir.children(directory).each { |entry| FileUtils.cp_r(File.join(directory, entry), target) }
+      end
+
       # --- models -----------------------------------------------------------
 
       def write_models
         out      = +"# frozen_string_literal: true\n\n"
         requires = @an.model_files.flat_map { |path| @an.model(path)[:requires] }.uniq
-        requires.each { |line| out << "#{line}\n" }
+        requires.reject { |line| dropped_require?(line) }.each { |line| out << "#{line}\n" }
         out << "\n"
 
         @an.model_files.each do |path|
-          model = @an.model(path)
-          out << "module #{model[:module]}\n"
-          out << "  class #{model[:class]} < Base::Model\n"
-          out << "    def self.attributes\n"
-          out << "      {\n"
-          model[:attributes].each do |attribute|
-            out << "        #{attribute.name}: { type: #{attribute.type.inspect}, "
-            out << "required: #{attribute.required}, default: #{attribute.default_source} },\n"
+          @an.models(path).each do |model|
+            out << "module #{model[:module]}\n"
+            out << "  class #{model[:class]} < Base::Model\n"
+            out << "    def self.attributes\n"
+            out << "      {\n"
+            model[:attributes].each do |attribute|
+              out << "        #{attribute.name}: { type: #{attribute.type.inspect}, "
+              out << "required: #{attribute.required}, default: #{attribute.default_source} },\n"
+            end
+            out << "      }\n"
+            out << "    end\n\n"
+            model[:attributes].each do |attribute|
+              out << "    def #{attribute.name}\n"
+              out << "      @attrs[:#{attribute.name}]\n"
+              out << "    end\n"
+              out << "    def #{attribute.name}=(value)\n"
+              out << "      @attrs[:#{attribute.name}] = value\n"
+              out << "      @#{attribute.name} = value\n"
+              out << "    end\n"
+            end
+            # Mirror every attribute into a real instance variable so the
+            # custom methods copied from the source (which read `@balance`,
+            # `@target_amount`, `@account`, …) keep working. Spinel has no
+            # dynamic `instance_variable_set`, so the assignments are static.
+            out << "    def after_initialize\n"
+            model[:attributes].each do |attribute|
+              out << "      @#{attribute.name} = @attrs[:#{attribute.name}]\n"
+            end
+            out << "    end\n\n"
+            model[:extra].each { |statement| out << "\n#{statement}\n" }
+            out << "  end\n"
+            out << "end\n\n"
           end
-          out << "      }\n"
-          out << "    end\n\n"
-          model[:attributes].each do |attribute|
-            out << "    def #{attribute.name}\n"
-            out << "      @attrs[:#{attribute.name}]\n"
-            out << "    end\n"
-            out << "    def #{attribute.name}=(value)\n"
-            out << "      @attrs[:#{attribute.name}] = value\n"
-            out << "    end\n"
-          end
-          model[:extra].each { |statement| out << "\n#{statement}\n" }
-          out << "  end\n"
-          out << "end\n\n"
         end
 
         File.write(File.join(@out, "generated", "models.rb"), out)
@@ -279,6 +309,16 @@ module Izen
         statements.each { |statement| out << "#{indent(statement, 2)}\n" }
         out << "end\n"
         File.write(File.join(@out, "generated", "app_helpers.rb"), out)
+      end
+
+      # Top-level constants from app.rb (ROUTES, PERIOD_OPTIONS, …) that the
+      # copied lib helpers and views reference.
+      def write_constants
+        constants = @an.app_constants
+        out       = +"# frozen_string_literal: true\n\n"
+        out << "# Top-level constants from the source app.rb.\n"
+        constants.each { |statement| out << "#{statement}\n" }
+        File.write(File.join(@out, "generated", "constants.rb"), out)
       end
 
       # Spinel does not dispatch undefined-method calls to method_missing, so
@@ -437,6 +477,7 @@ module Izen
 
       def write_requires
         out = +"# frozen_string_literal: true\n\n"
+        out << "require_relative \"constants\"\n"
         out << "require_relative \"app_helpers\"\n"
         out << "require_relative \"controller_helpers\"\n"
         out << "require_relative \"models\"\n"
@@ -469,13 +510,21 @@ module Izen
       end
 
       # `require_relative "x"` in the source app.rb is relative to the app
-      # root; from generated/requires.rb it must point one level up.
+      # root; from generated/requires.rb it must point one level up. The `../`
+      # goes INSIDE the quotes ("x" -> "../x"), not before the opening quote.
       def rewrite_app_requires
         @an.app_requires.filter_map do |line|
-          next if line.match?(/^require ["'](?:#{DROPPED_REQUIRES.map { |name| Regexp.escape(name) }.join("|")})["']/)
+          next if dropped_require?(line)
 
-          line.sub(/^require_relative /, 'require_relative "../')
+          line.sub(/^require_relative\s+(["'])(.+?)\1/) { "require_relative #{$1}../#{$2}#{$1}" }
         end.uniq
+      end
+
+      # True for `require "gem"` lines whose gem is unavailable under the
+      # native runtime (shimmed or unused); they must not be emitted.
+      def dropped_require?(line)
+        names = DROPPED_REQUIRES.sort_by { |name| -name.length }.map { |name| Regexp.escape(name) }
+        line.match?(/^require ["'](?:#{names.join("|")})["']/)
       end
 
       def write_database_config
@@ -516,9 +565,36 @@ module Izen
         }
       end
 
+      # The native runtime applies `db/schema.sql` on boot, so it must be
+      # idempotent (booting against an existing database — e.g. the production
+      # file — must not try to re-create tables). Running the migrations against
+      # a throwaway database and dumping the result gives the final schema as
+      # plain `CREATE TABLE`/`CREATE INDEX`, with no `ALTER`/`DROP`; rewriting
+      # those to `IF NOT EXISTS` makes re-running a no-op.
       def write_schema
-        schema = Dir[File.join(@source, "migrations", "*.up.sql")].sort.map { |path| File.read(path) }.join("\n")
+        require "sqlite3"
+        require "tmpdir"
+
+        schema = Dir.mktmpdir do |dir|
+          db         = SQLite3::Database.new(File.join(dir, "schema.db"))
+          Dir[File.join(@source, "migrations", "*.up.sql")].sort.each do |path|
+            db.execute_batch(File.read(path))
+          end
+          statements = db.execute(<<~SQL).flatten
+            SELECT sql FROM sqlite_master
+            WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%'
+            ORDER BY CASE type WHEN 'table' THEN 0 WHEN 'index' THEN 1 ELSE 2 END, name
+          SQL
+          db.close
+          statements.map { |statement| idempotent_schema(statement) }.join(";\n\n") + ";\n"
+        end
         File.write(File.join(@out, "db", "schema.sql"), schema)
+      end
+
+      def idempotent_schema(statement)
+        statement
+          .sub(/\ACREATE TABLE /i, "CREATE TABLE IF NOT EXISTS ")
+          .sub(/\ACREATE (UNIQUE )?INDEX /i) { "CREATE #{$1}INDEX IF NOT EXISTS " }
       end
 
       def write_bin

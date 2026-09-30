@@ -114,3 +114,132 @@ module Base
     end
   end
 end
+
+# Spinel has no Date. The app builds Date objects for period ranges, formatting
+# and arithmetic over the ISO "YYYY-MM-DD" strings SQLite stores, so this
+# implements the surface it uses (today/parse/new, +/-/>>, comparisons and
+# to_s). Gregorian date <-> Julian day conversion is the standard algorithm.
+class Date
+  include Comparable
+
+  class Error < ArgumentError; end
+
+  MONTH_DAYS = [ 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 ].freeze
+
+  attr_reader :year, :month, :day, :jd
+
+  def self.today
+    now = Time.now
+    new(now.year, now.month, now.day)
+  end
+
+  def self.parse(value)
+    match = value.to_s.match(/\A(\d{4})-(\d{1,2})-(\d{1,2})/)
+    raise Error, "invalid date: #{value}" unless match
+
+    new(match[1].to_i, match[2].to_i, match[3].to_i)
+  end
+
+  def self.from_jd(jd)
+    a     = jd + 32044
+    b     = (4 * a + 3) / 146097
+    c     = a - (146097 * b) / 4
+    d     = (4 * c + 3) / 1461
+    e     = c - (1461 * d) / 4
+    m     = (5 * e + 2) / 153
+    day   = e - (153 * m + 2) / 5 + 1
+    month = m + 3 - 12 * (m / 10)
+    year  = 100 * b + d - 4800 + m / 10
+    new(year, month, day)
+  end
+
+  def self.leap?(year)
+    (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+  end
+
+  def self.days_in_month(year, month)
+    return 29 if month == 2 && leap?(year)
+
+    MONTH_DAYS[month - 1]
+  end
+
+  def self.jd(year, month, day)
+    a = (14 - month) / 12
+    y = year + 4800 - a
+    m = month + 12 * a - 3
+    day + (153 * m + 2) / 5 + 365 * y + y / 4 - y / 100 + y / 400 - 32045
+  end
+
+  def initialize(year, month, day)
+    @year  = year
+    @month = month
+    @day   = day
+    @jd    = Date.jd(year, month, day)
+  end
+
+  def wday
+    (@jd + 1) % 7
+  end
+
+  def +(other)
+    Date.from_jd(@jd + other.to_i)
+  end
+
+  def -(other)
+    return @jd - other.jd if other.is_a?(Date)
+
+    Date.from_jd(@jd - other.to_i)
+  end
+
+  def >>(months)
+    total = @year * 12 + (@month - 1) + months.to_i
+    year  = total / 12
+    month = total % 12 + 1
+    day   = [ @day, Date.days_in_month(year, month) ].min
+    Date.new(year, month, day)
+  end
+
+  def <<(months)
+    total = @year * 12 + (@month - 1) - months.to_i
+    year  = total / 12
+    month = total % 12 + 1
+    day   = [ @day, Date.days_in_month(year, month) ].min
+    Date.new(year, month, day)
+  end
+
+  def succ
+    self + 1
+  end
+
+  def <=>(other)
+    @jd <=> other.jd
+  end
+
+  def ==(other)
+    other.is_a?(Date) && @jd == other.jd
+  end
+
+  def eql?(other)
+    self == other
+  end
+
+  def hash
+    @jd
+  end
+
+  def to_s
+    "#{pad(@year, 4)}-#{pad(@month, 2)}-#{pad(@day, 2)}"
+  end
+
+  def inspect
+    to_s
+  end
+
+  private
+
+  def pad(value, width)
+    string = value.to_s
+    string = "0#{string}" while string.length < width
+    string
+  end
+end

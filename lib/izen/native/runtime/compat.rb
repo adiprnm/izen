@@ -10,6 +10,13 @@
 module Izen
   Base     = ::Base
   Database = ::Database
+
+  # The source app reads static assets relative to Izen.root (icons). Under the
+  # native build the process runs from the app directory, so default to "."
+  # (override with APP_ROOT when the binary is started elsewhere).
+  def self.root
+    ENV["APP_ROOT"] || "."
+  end
 end
 
 # Erubi stand-in. When the app renders with `escape: true` the generator passes

@@ -23,8 +23,26 @@ module Helpers
     %(<input type="hidden" name="_csrf" value="#{h csrf_token}">)
   end
 
+  # Roda's route_csrf names its hidden field helper `csrf_tag`; the copied
+  # `csrf_token_field` view helper calls it.
+  def csrf_tag
+    csrf_field
+  end
+
   def csrf_meta_tag
     %(<meta name="csrf-token" content="#{h csrf_token}">)
+  end
+
+  # The native server enforces CSRF; the generated route table still calls this
+  # guard, so provide a no-op (Roda's :route_csrf plugin does the real work on
+  # CRuby).
+  def check_csrf!
+    nil
+  end
+
+  # Roda's render: like `view` but without the layout (htmx fragments).
+  def render(template, locals: {}, **kwargs)
+    view(template, locals: locals.merge(kwargs), layout: false)
   end
 
   def simple_format(text)

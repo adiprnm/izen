@@ -144,32 +144,53 @@ module Izen
 
       # --- models -----------------------------------------------------------
 
-      def model(path)
+      # Every `Base::Model` subclass in the file. A single file may declare
+      # more than one (e.g. `Category::Model` plus `Category::Uncategorized`),
+      # so the generator emits them all.
+      def models(path)
         source      = File.read(path)
         tree        = Prism.parse(source).value
-        klass       = find_class(tree)
-        body        = klass.body
         module_name = enclosing_module(tree)
-        class_name  = klass.name.to_s
+        requires    = top_level_requires(tree, source)
 
-        attributes = []
-        extra      = []
+        model_classes(tree).map do |klass|
+          attributes = []
+          extra      = []
 
-        body&.body&.each do |statement|
-          if statement.is_a?(Prism::CallNode) && statement.name == :attribute && statement.receiver.nil?
-            attributes << parse_attribute(statement, source)
-          else
-            extra << Node.slice(source, statement)
+          klass.body&.body&.each do |statement|
+            if statement.is_a?(Prism::CallNode) && statement.name == :attribute && statement.receiver.nil?
+              attributes << parse_attribute(statement, source)
+            else
+              extra << Node.slice(source, statement)
+            end
           end
-        end
 
-        {
-          module:     module_name,
-          class:      class_name,
-          attributes: attributes,
-          extra:      extra,
-          requires:   top_level_requires(tree, source)
-        }
+          {
+            module:     module_name,
+            class:      klass.name.to_s,
+            attributes: attributes,
+            extra:      extra,
+            requires:   requires
+          }
+        end
+      end
+
+      def model(path)
+        models(path).first
+      end
+
+      def model_classes(tree)
+        classes = []
+        Node.walk(tree) { |node| classes << node if node.is_a?(Prism::ClassNode) }
+        classes.select { |klass| model_class?(klass) }
+      end
+
+      def model_class?(klass)
+        superclass = klass.superclass
+        return false unless superclass
+
+        name = Node.constant_name(superclass).to_s
+        name == "Model" || name.end_with?("::Model")
       end
 
       def parse_attribute(call, source)
@@ -259,7 +280,8 @@ module Izen
           methods = method_hash_keys(tree)
 
           Node.walk(tree) do |node|
-            next unless node.is_a?(Prism::CallNode) && %i[render view].include?(node.name) && node.arguments
+            next unless node.is_a?(Prism::CallNode) && %i[render view partial
+fragment].include?(node.name) && node.arguments
 
             args     = node.arguments.arguments
             template = args[0]
@@ -388,6 +410,20 @@ module Izen
         end
       end
 
+      # Top-level constants and modules in app.rb (ROUTES, PERIOD_OPTIONS,
+      # Persistable, …) that the copied helper modules, models and views
+      # reference.
+      def app_constants
+        source = File.read(File.join(root, "app.rb"))
+        tree   = Prism.parse(source).value
+        tree.statements.body.filter_map do |statement|
+          case statement
+          when Prism::ConstantWriteNode, Prism::ModuleNode
+            Node.slice(source, statement)
+          end
+        end
+      end
+
       # Top-level `require` / `require_relative` lines from app.rb.
       def app_requires
         source = File.read(File.join(root, "app.rb"))
@@ -458,16 +494,18 @@ module Izen
       end
 
       # Constant path => { methods: [...], includes: [...] } for every module
-      # declared under app/.
+      # declared under app/ or lib/ (shared helper mixins live in lib/).
       def module_registry
         @module_registry ||= begin
           registry = {}
-          Dir[File.join(root, "app/**/*.rb")]
-            .reject { |path| path.end_with?("_test.rb") || File.basename(path) == "test_helper.rb" }
-            .each do |path|
-              source = File.read(path)
-              collect_modules(Prism.parse(source).value, "", registry, source)
-            end
+          [ "app/**/*.rb", "lib/**/*.rb" ].each do |glob|
+            Dir[File.join(root, glob)]
+              .reject { |path| path.end_with?("_test.rb") || File.basename(path) == "test_helper.rb" }
+              .each do |path|
+                source = File.read(path)
+                collect_modules(Prism.parse(source).value, "", registry, source)
+              end
+          end
           registry
         end
       end
@@ -514,10 +552,11 @@ module Izen
         params  = parts.map { |part| Node.slice(source, part) }.join(", ")
         forward = parts.filter_map do |part|
           case part
-          when Prism::RequiredParameterNode, Prism::OptionalParameterNode,
-               Prism::RequiredKeywordParameterNode, Prism::OptionalKeywordParameterNode,
-               Prism::MultiTargetNode
+          when Prism::RequiredParameterNode, Prism::OptionalParameterNode, Prism::MultiTargetNode
             part.name.to_s
+          when Prism::RequiredKeywordParameterNode, Prism::OptionalKeywordParameterNode
+            # Keyword parameters must be forwarded as keywords, not positionally.
+            "#{part.name}: #{part.name}"
           when Prism::RestParameterNode          then "*#{part.name}"
           when Prism::KeywordRestParameterNode   then "**#{part.name}"
           when Prism::BlockParameterNode         then "&#{part.name}"
@@ -569,10 +608,39 @@ module Izen
         end
       end
 
+      # The host application class. Prefer the class that subclasses the Izen
+      # application (`class App < Izen::Application`); fall back to the first
+      # class when there is no such subclass (e.g. plain Roda apps). Without
+      # this, a base class defined earlier in app.rb (such as
+      # `ApplicationController`) would be mistaken for the app class.
       def find_class(tree)
-        klass                            = nil
-        Node.walk(tree) { |node| klass ||= node if node.is_a?(Prism::ClassNode) }
-        klass
+        classes = []
+        Node.walk(tree) { |node| classes << node if node.is_a?(Prism::ClassNode) }
+        classes.find { |klass| application_class?(klass) } || classes.first
+      end
+
+      def application_class?(klass)
+        superclass = klass.superclass
+        return false unless superclass
+
+        Node.constant_name(superclass).to_s.end_with?("Application")
+      end
+
+      # The superclass the copied controllers use (e.g. "ApplicationController").
+      # The generated runtime exposes the base as Base::Controller, so the
+      # generator aliases the app's name to it for the copied subclasses.
+      def controller_base_class
+        path = controller_files.first
+        return nil unless path
+
+        klass                                                          = nil
+        Node.walk(Prism.parse(File.read(path)).value) { |node| klass ||= node if node.is_a?(Prism::ClassNode) }
+        return nil unless klass&.superclass
+
+        name = Node.constant_name(klass.superclass).to_s
+        return nil if name.empty? || name == "Base::Controller" || name == "Izen::Base::Controller"
+
+        name
       end
 
       def enclosing_module(tree)

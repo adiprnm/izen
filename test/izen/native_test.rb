@@ -10,7 +10,7 @@ require "izen/native"
 class NativeTest < Minitest::Test
   include TestSupport::Scaffold
 
-  DRIVER = <<~'RUBY'
+  DRIVER       = <<~'RUBY'
     # frozen_string_literal: true
     ENV["APP_ENV"] = "test"
     root = ARGV[0]
@@ -87,11 +87,42 @@ class NativeTest < Minitest::Test
       assert File.file?(File.join(source, "Dockerfile.native"))
       assert File.file?(File.join(source, "config", "deploy.native.yml"))
 
-      assert_includes File.read(File.join(out, "generated", "models.rb")), "class Model < Base::Model"
+      models_rb = File.read(File.join(out, "generated", "models.rb"))
+      assert_includes models_rb, "class Model < Base::Model"
+      # Attributes are mirrored into real ivars so custom methods copied from
+      # the source (which read `@balance`, …) keep working.
+      assert_includes models_rb, "def after_initialize"
+      assert_includes models_rb, "@name = @attrs[:name]"
       assert_includes File.read(File.join(out, "generated", "routes.rb")), 'r.segments[0] == "widgets"'
 
       output = run_driver(out)
       assert_includes output, "ALL OK", "driver output:\n#{output}"
+    end
+  end
+
+  # A model file may declare several `Base::Model` subclasses (e.g.
+  # `Category::Model` plus `Category::Uncategorized`); every one must be
+  # emitted, or references like `Category::Uncategorized.new` blow up at
+  # runtime.
+  def test_generates_every_model_class_declared_in_a_file
+    Dir.mktmpdir("izen-native") do |dir|
+      path = File.join(dir, "app", "category", "model.rb")
+      FileUtils.mkdir_p(File.dirname(path))
+      File.write(path, <<~RUBY)
+        module Category
+          class Model < Base::Model
+            attribute :id, Integer, required: false
+          end
+
+          class Uncategorized < Base::Model
+            attribute :name, String, default: "Tanpa Kategori"
+          end
+        end
+      RUBY
+
+      models = Izen::Native::Analyzer.new(dir).models(path)
+
+      assert_equal %w[Model Uncategorized], models.map { |model| model[:class] }
     end
   end
 
