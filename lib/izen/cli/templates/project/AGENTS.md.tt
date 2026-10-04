@@ -1,0 +1,96 @@
+# AGENTS.md
+
+Guidance for AI coding agents working in this repository — a **<%= @title %>**
+app built on [Izen](https://github.com/adiprnm/izen), a lightweight,
+module-first core for Roda + SQLite.
+
+## What this is
+
+Izen is plain Ruby: **no ORM**, **no autoloader**, **no framework magic**.
+Persistence is raw SQL over SQLite, and every file is required explicitly.
+
+## Commands
+
+```sh
+bundle install
+bundle exec izen dev [--port PORT] [--host HOST]  # boot the dev server (rackup/Puma)
+bundle exec izen migration migrate                # apply all pending migrations
+bundle exec izen migration rollback [STEP]        # roll back the last STEP (default 1)
+bundle exec izen migration status                 # show applied / pending
+bundle exec izen migration generate NAME          # write an empty up/down pair
+bundle exec izen module new NAME field:type ...   # scaffold a domain module
+bundle exec rake test                             # run the test suite
+bundle exec izen native build                     # compile one native binary (Spinel)
+```
+
+`APP_ENV` selects the environment (defaults to `development`; tests use `test`).
+
+## Layout
+
+| Path | Purpose |
+|---|---|
+| `app.rb` | Roda application, requires `app/*/*.rb` and declares routes |
+| `app/<module>/` | A domain module: model, contract, repository, controller, views, colocated tests |
+| `app/layout.erb` | Shared ERB layout |
+| `migrations/` | Versioned `NNNNNN_name.up.sql` / `.down.sql` migrations |
+| `config/database.yaml` | SQLite path per `APP_ENV` |
+| `storage/` | SQLite databases and the session secret |
+| `test/` | App-level tests and the native conformance scenarios |
+
+## Conventions
+
+### Modules
+
+`izen module new post title:string body:text` creates a module with four
+layers. The **module name is singular**; the SQL table and routes are plural.
+
+- **Model** (`Base::Model`) — a typed value object, no persistence:
+  `attribute :title, String`, `attribute :body, String`.
+- **Contract** (`Base::Contract`) — params validation:
+  `params { required :title, String; optional :body, String }`. `#call` returns
+  a result with `success?`, `to_h` and `errors`.
+- **Repository** (`Base::Repository`) — *all* database access, raw SQL:
+  `query`, `find_one`, `to_model`, `to_models`, `transaction`.
+- **Controller** (`Base::Controller`) — orchestrates the request, renders views
+  and sets flash messages.
+
+Data flow:
+
+- read: `controller -> repository -> view`
+- write: `controller -> contract -> model -> repository -> view`
+
+### Views
+
+ERB files live next to the module (`app/<module>/index.erb`, `show.erb`,
+`new.erb`, `edit.erb`) and render inside `app/layout.erb`.
+
+### Routes
+
+Routes are declared in `app.rb` inside the `route` block. `izen module new`
+inserts the module's routes just above the `# cli:module-routes` marker, so
+leave that marker in place.
+
+### Migrations
+
+Add schema changes as a versioned `up`/`down` pair under `migrations/`. Use
+`izen migration generate NAME` (or `izen module new`, which writes the create
+migration) and run `izen migration migrate`.
+
+### Tests
+
+Minitest. Colocate `*_test.rb` with the module under `app/<module>/`.
+
+- `TestSupport::DatabaseTest` runs each test in a transaction that is rolled
+  back afterwards.
+- `TestSupport::ControllerTest` adds `Rack::Test` against `App`.
+
+## Rules
+
+- **No autoloader.** `app.rb` requires every `app/*/*.rb` file (skipping
+  `*_test.rb`). New modules under `app/` are picked up automatically; code in a
+  new top-level directory is not.
+- Keep SQL inside repositories and validation inside contracts.
+- Never commit `.env`, SQLite databases, `/storage/session_secret`, or
+  `/config/deploy*.yml` (all git-ignored).
+- Configuration lives in `config/database.yaml` and `.env` (loaded by
+  `Izen::Dotenv`).

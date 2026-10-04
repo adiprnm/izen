@@ -61,6 +61,7 @@ class CliTest < TestSupport::DatabaseTest
     assert File.file?(File.join(project, "app.rb"))
     assert File.file?(File.join(project, "config.ru"))
     assert File.file?(File.join(project, "Rakefile"))
+    assert File.file?(File.join(project, "AGENTS.md"))
     assert File.file?(File.join(project, "config", "database.yaml"))
     assert File.file?(File.join(project, "config", "deploy.yml"))
     assert File.file?(File.join(project, "config", "deploy.native.yml"))
@@ -105,6 +106,11 @@ class CliTest < TestSupport::DatabaseTest
     readme = File.read(File.join(project, "README.md"))
     assert_includes readme, "## Deploy (Kamal)"
     assert_includes readme, "blog_native_storage"
+
+    agents = File.read(File.join(project, "AGENTS.md"))
+    assert_includes agents, "# AGENTS.md"
+    assert_includes agents, "# cli:module-routes"
+    assert_includes agents, "izen module new"
 
     app = File.read(File.join(project, "app.rb"))
     assert_includes app, "class App < Izen::Application"

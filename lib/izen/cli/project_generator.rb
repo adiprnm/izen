@@ -27,6 +27,7 @@ module Izen
         "config.ru"                => "config.ru.tt",
         "Rakefile"                 => "Rakefile.tt",
         "README.md"                => "README.md.tt",
+        "AGENTS.md"                => "AGENTS.md.tt",
         ".env.example"             => "env.example.tt",
         ".gitignore"               => "gitignore.tt",
         "config/database.yaml"     => "database.yaml.tt",
