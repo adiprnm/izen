@@ -1,0 +1,38 @@
+# Which storage service uploaded files use, per environment.
+#
+# `local` writes files under `path` (relative to the project root) and
+# Izen::Application serves that directory at `url`, so an uploaded file is
+# immediately reachable in the browser:
+#
+#   key = Izen::Storage.store(params["avatar"])
+#   Izen::Storage.url(key) # => "/uploads/2026/10/ab12….png"
+#
+# Point `path` at a mounted volume in production so uploads survive deploys.
+development:
+  service: local
+  path: storage/uploads
+  url: /uploads
+
+test:
+  service: local
+  path: storage/uploads
+  url: /uploads
+
+production:
+  service: local
+  path: storage/uploads
+  url: /uploads
+
+# S3-compatible backend (AWS S3, Cloudflare R2, MinIO, ...). Requires the
+# aws-sdk-s3 gem when used on CRuby. Values can be interpolated from the
+# environment with ERB, exactly like Rails' config files:
+#
+# production:
+#   service: s3
+#   bucket: "<%%= ENV["S3_BUCKET"] %>"
+#   region: "<%%= ENV.fetch("S3_REGION", "auto") %>"
+#   endpoint: "<%%= ENV["S3_ENDPOINT"] %>"
+#   access_key_id: "<%%= ENV["S3_ACCESS_KEY_ID"] %>"
+#   secret_access_key: "<%%= ENV["S3_SECRET_ACCESS_KEY"] %>"
+#   prefix: uploads                           # optional key prefix
+#   public_url: "<%%= ENV["S3_PUBLIC_URL"] %>" # optional; otherwise presigned URLs

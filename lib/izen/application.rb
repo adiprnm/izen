@@ -4,6 +4,7 @@ require "roda"
 require "rack/method_override"
 
 require_relative "base/session_plugin"
+require_relative "storage"
 
 module Izen
   # Base Roda application every Izen project subclasses.
@@ -38,9 +39,22 @@ module Izen
         subclass.plugin :flash
         subclass.plugin :memory_session, key: "#{session_key(subclass)}_session"
         subclass.use Rack::MethodOverride
+        mount_storage(subclass)
       end
 
       private
+
+      # Serves the local storage directory (`storage/uploads` by default) at the
+      # configured URL (`/uploads`), so uploaded files are reachable without a
+      # route. Skipped when the active service is not on-disk (a CDN or remote
+      # backend), in which case #url points at that service directly.
+      def mount_storage(subclass)
+        url = Izen::Storage.public_url
+        dir = Izen::Storage.public_dir
+        return unless url && dir
+
+        subclass.use Izen::Storage::Static, url_prefix: url, root: dir
+      end
 
       # Cookie name for the session, derived from the subclass name so two apps
       # in the same browser do not share a session: App -> app_session.

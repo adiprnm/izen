@@ -21,6 +21,7 @@ for a layer built around models and schemas.
 | `Izen::Base::Batcher` | Write-behind buffer: persist fire-and-forget writes in batches |
 | `Izen::Base::Mailer` | Transactional mailer base class |
 | `Izen::Database` | Thread-local SQLite connection (WAL + foreign keys) |
+| `Izen::Storage` | Upload file storage — local disk or S3-compatible, configured in `config/storage.yml` |
 | `Izen::HTTP` | Small HTTP client supporting every HTTP method |
 | `Izen::Encryptor` | AES-256-GCM for secrets stored in the database |
 | `Izen::Dotenv` | Minimal `.env` loader (no dependency) |
@@ -50,8 +51,19 @@ Izen.configure do |config|
 end
 ```
 
-The root is where `config/database.yaml`, `migrations/`, `storage/`, `app/`
-(which also holds the views) and `.env` live.
+The root is where `config/database.yaml`, `config/storage.yml`, `migrations/`,
+`storage/`, `app/` (which also holds the views) and `.env` live.
+
+Both config files are rendered with ERB, so values can come from the
+environment at boot — the same pattern Rails uses:
+
+```yaml
+# config/storage.yml
+production:
+  service: s3
+  bucket: "<%= ENV["S3_BUCKET"] %>"
+  secret_access_key: "<%= ENV["S3_SECRET_ACCESS_KEY"] %>"
+```
 
 ## The application class
 
@@ -105,6 +117,58 @@ The buffer lives in memory: items not yet flushed are lost on `SIGKILL` or a
 crash, but a graceful shutdown flushes them (the native server calls
 `Batcher.flush_all`). Use it for analytics-like data, not transactions.
 
+## File storage
+
+`Izen::Storage` writes uploaded files through a service selected per
+environment in `config/storage.yml`. Two services ship:
+
+- **`local`** — files go under `path` (default `storage/uploads`, relative to
+  `Izen.root`), and `Izen::Application` serves that directory at `url` (default
+  `/uploads`), so an uploaded file is reachable in the browser without a route.
+- **`s3`** (alias `s3_compatible`) — any S3-compatible object store (AWS S3,
+  Cloudflare R2, MinIO, ...) through the optional `aws-sdk-s3` gem. Credentials
+  and the bucket fall back to the standard `S3_*` environment variables.
+
+```yaml
+# config/storage.yml
+development:
+  service: local
+  path: storage/uploads
+  url: /uploads
+
+production:
+  service: s3
+  bucket: "<%= ENV["S3_BUCKET"] %>"
+  region: auto                              # R2; defaults to "auto"
+  endpoint: "<%= ENV["S3_ENDPOINT"] %>"
+  access_key_id: "<%= ENV["S3_ACCESS_KEY_ID"] %>"
+  secret_access_key: "<%= ENV["S3_SECRET_ACCESS_KEY"] %>"
+  prefix: uploads                           # optional key prefix
+  public_url: "<%= ENV["S3_PUBLIC_URL"] %>" # optional; otherwise presigned URLs
+```
+
+```ruby
+# A controller saving an upload from params (a Rack multipart hash).
+key = Izen::Storage.store(params["avatar"])
+Izen::Storage.url(key) # => "/uploads/2026/10/ab12….png"
+
+Izen::Storage.read(key)       # binary String
+Izen::Storage.exist?(key)     # => true
+Izen::Storage.delete(key)     # => true
+```
+
+`store` also accepts an uploaded-file object, a File/IO or a path on disk, and
+returns the storage **key** — persist the key and derive the URL from it. Pass
+`key:` to choose a stable path yourself (e.g. `"avatars/#{user.id}.png"`);
+otherwise a random, date-sharded key that keeps the original extension is
+generated. Point `path` at a mounted volume in production so uploads survive
+deploys. Adding another backend means implementing `Izen::Storage::Service` and
+registering it in `Izen::Storage::SERVICES`.
+
+The native build cannot read YAML, so `config/storage.yml` is baked into the
+generated project at build time; `S3_*` / `STORAGE_SERVICE` environment
+variables still override it at runtime (the recommended home for secrets).
+
 ## The CLI
 
 ```sh
@@ -122,9 +186,10 @@ izen module new post title:string body:text    # scaffold a domain module
 ```
 
 `izen new` writes a runnable Roda + SQLite skeleton: `app.rb`, `config.ru`,
-`config/database.yaml`, `app/layout.erb`, `Rakefile`, `README.md`,
-`.env.example`, a smoke test, and the `app/`, `migrations/` and `storage/`
-directories. It also scaffolds a Kamal deploy setup — `config/deploy.yml`
+`config/database.yaml`, `config/storage.yml`, `app/layout.erb`, `Rakefile`,
+`README.md`,
+`.env.example`, a smoke test, and the `app/`, `migrations/`, `storage/` and
+`storage/uploads/` directories. It also scaffolds a Kamal deploy setup — `config/deploy.yml`
 (CRuby), `config/deploy.native.yml` and `Dockerfile.native` (native) and
 `.kamal/secrets-common` — for the native build (see
 [Kamal deployment](#kamal-deployment)).

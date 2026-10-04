@@ -10,6 +10,7 @@
 module Izen
   Base     = ::Base
   Database = ::Database
+  Storage  = ::Storage
 
   # The source app reads static assets relative to Izen.root (icons). Under the
   # native build the process runs from the app directory, so default to "."

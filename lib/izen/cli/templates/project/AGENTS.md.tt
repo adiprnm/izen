@@ -34,7 +34,8 @@ bundle exec izen native build                     # compile one native binary (S
 | `app/layout.erb` | Shared ERB layout |
 | `migrations/` | Versioned `NNNNNN_name.up.sql` / `.down.sql` migrations |
 | `config/database.yaml` | SQLite path per `APP_ENV` |
-| `storage/` | SQLite databases and the session secret |
+| `config/storage.yml` | Upload storage service per `APP_ENV` (default: `local`) |
+| `storage/` | SQLite databases, the session secret and uploaded files |
 | `test/` | App-level tests and the native conformance scenarios |
 
 ## Conventions
@@ -64,6 +65,22 @@ Data flow:
 ERB files live next to the module (`app/<module>/index.erb`, `show.erb`,
 `new.erb`, `edit.erb`) and render inside `app/layout.erb`.
 
+### Uploads
+
+Store uploaded files with `Izen::Storage`, which writes through the service
+named in `config/storage.yml` (default: `local`, under `storage/uploads`,
+served at `/uploads`):
+
+```ruby
+key = Izen::Storage.store(params["avatar"]) # => "2026/10/ab12….png"
+Izen::Storage.url(key)                      # => "/uploads/2026/10/ab12….png"
+```
+
+Persist the returned key in the database and derive the URL from it. `store`
+accepts a Rack multipart hash, an uploaded-file object, a File/IO or a path.
+Swap the service (e.g. for an S3-compatible bucket) in `config/storage.yml`
+without changing callers; S3 credentials belong in the `S3_*` env vars.
+
 ### Routes
 
 Routes are declared in `app.rb` inside the `route` block. `izen module new`
@@ -90,7 +107,8 @@ Minitest. Colocate `*_test.rb` with the module under `app/<module>/`.
   `*_test.rb`). New modules under `app/` are picked up automatically; code in a
   new top-level directory is not.
 - Keep SQL inside repositories and validation inside contracts.
-- Never commit `.env`, SQLite databases, `/storage/session_secret`, or
-  `/config/deploy*.yml` (all git-ignored).
-- Configuration lives in `config/database.yaml` and `.env` (loaded by
-  `Izen::Dotenv`).
+- Never commit `.env`, SQLite databases, `/storage/session_secret`, uploaded
+  files under `/storage/uploads`, or `/config/deploy*.yml` (all git-ignored).
+- Configuration lives in `config/database.yaml`, `config/storage.yml`, and
+  `.env` (loaded by `Izen::Dotenv`). Both YAML files are ERB-rendered, so
+  values can come from the environment (`<%%= ENV["S3_BUCKET"] %>`).

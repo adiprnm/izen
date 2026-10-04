@@ -63,6 +63,7 @@ class CliTest < TestSupport::DatabaseTest
     assert File.file?(File.join(project, "Rakefile"))
     assert File.file?(File.join(project, "AGENTS.md"))
     assert File.file?(File.join(project, "config", "database.yaml"))
+    assert File.file?(File.join(project, "config", "storage.yml"))
     assert File.file?(File.join(project, "config", "deploy.yml"))
     assert File.file?(File.join(project, "config", "deploy.native.yml"))
     assert File.file?(File.join(project, "Dockerfile.native"))
@@ -74,10 +75,18 @@ class CliTest < TestSupport::DatabaseTest
     assert File.directory?(File.join(project, "app"))
     assert File.directory?(File.join(project, "migrations"))
     assert File.directory?(File.join(project, "storage"))
+    assert File.file?(File.join(project, "storage", "uploads", ".gitkeep"))
+
+    storage = File.read(File.join(project, "config", "storage.yml"))
+    assert_includes storage, "service: local"
+    assert_includes storage, "path: storage/uploads"
+    assert_includes storage, "url: /uploads"
 
     gitignore = File.read(File.join(project, ".gitignore"))
     assert_includes gitignore, "/storage/*.db"
     assert_includes gitignore, "/storage/session_secret"
+    assert_includes gitignore, "/storage/uploads/*"
+    assert_includes gitignore, "!/storage/uploads/.gitkeep"
     assert_includes gitignore, ".env"
     assert_includes gitignore, "!.env.example"
     assert_includes gitignore, "/native/"

@@ -2,9 +2,9 @@
 
 require "fileutils"
 require "erubi"
-require "yaml"
 require_relative "analyzer"
 require_relative "route_compiler"
+require_relative "../config"
 require_relative "../cli/kamal"
 require_relative "../cli/native_assets"
 
@@ -59,6 +59,7 @@ module Izen
         write_routes
         write_requires
         write_database_config
+        write_storage_config
         write_schema
         write_bin
         write_manifest
@@ -156,6 +157,7 @@ module Izen
         source = source
                  .gsub("Izen::Base::", "Base::")
                  .gsub("Izen::Database", "Database")
+                 .gsub("Izen::Storage", "Storage")
                  .gsub("Izen::Encryptor", "Encryptor")
                  .gsub("Izen::HTTP", "HTTP")
                  # Spinel's bundled digest has no SHA512; the runtime shim provides a
@@ -497,6 +499,7 @@ module Izen
         out << "require_relative \"controller_helpers\"\n"
         out << "require_relative \"models\"\n"
         out << "require_relative \"contracts\"\n"
+        out << "require_relative \"storage_config\"\n"
 
         rewrite_app_requires.each { |line| out << "#{line}\n" }
         @an.lib_files.each do |path|
@@ -562,7 +565,7 @@ module Izen
                       .find { |path| File.file?(path) }
         return default_database_paths unless config_path
 
-        config = YAML.load_file(config_path) || {}
+        config = Izen::Config.load_yaml(config_path) || {}
         paths  = {}
         config.each do |env, settings|
           next unless settings.is_a?(Hash) && settings["path"]
@@ -578,6 +581,62 @@ module Izen
           "test"        => "storage/test.db",
           "production"  => "storage/production.db"
         }
+      end
+
+      # The native runtime cannot read config/storage.yml (YAML is unavailable
+      # under Spinel), so the per-environment settings are baked into
+      # generated/storage_config.rb. Secrets remain overridable from the
+      # environment at runtime; see runtime/storage.rb.
+      def write_storage_config
+        settings = storage_settings
+        out      = +"# frozen_string_literal: true\n\n"
+        out << "# Storage settings baked in at generation time (YAML is unavailable\n"
+        out << "# under Spinel). Mirrors config/storage.yml in the source app.\n"
+        out << "module StorageConfig\n"
+        out << "  DEFAULT = #{ruby_literal(default_storage_settings)}.freeze\n\n"
+        out << "  SETTINGS = {\n"
+        settings.each { |env, values| out << "    #{env.inspect} => #{ruby_literal(values)},\n" }
+        out << "  }.freeze\n"
+        out << "end\n"
+        File.write(File.join(@out, "generated", "storage_config.rb"), out)
+      end
+
+      def storage_settings
+        settings    = {}
+        config_path = %w[config/storage.yml config/storage.yaml]
+                      .map { |path| File.join(@source, path) }
+                      .find { |path| File.file?(path) }
+        if config_path
+          config = Izen::Config.load_yaml(config_path) || {}
+          config.each do |env, values|
+            settings[env.to_s] = values if values.is_a?(Hash)
+          end
+        end
+        settings
+      end
+
+      def default_storage_settings
+        {
+          "service" => "local",
+          "path"    => "storage/uploads",
+          "url"     => "/uploads"
+        }
+      end
+
+      # Renders a settings hash (strings, numbers, booleans, nested hashes)
+      # as a Ruby literal for the generated config.
+      def ruby_literal(value)
+        case value
+        when Hash
+          pairs = value.map { |key, item| "#{key.to_s.inspect} => #{ruby_literal(item)}" }
+          "{ #{pairs.join(", ")} }"
+        when Array
+          "[#{value.map { |item| ruby_literal(item) }.join(", ")}]"
+        when nil, true, false, Numeric
+          value.inspect
+        else
+          value.to_s.inspect
+        end
       end
 
       # The native runtime applies `db/schema.sql` on boot, so it must be

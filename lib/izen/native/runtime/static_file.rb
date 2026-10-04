@@ -1,8 +1,10 @@
 # frozen_string_literal: true
 
-# Serves files from `public/` (Roda's `plugin :public` + `r.public`). The
-# original app mounts the directory at the web root; this reproduces that for
-# the lowered server.
+require_relative "storage"
+
+# Serves files from `public/` (Roda's `plugin :public` + `r.public`) and the
+# local storage directory under /uploads (`Storage.public_dir`), matching the
+# CRuby app's Rack::Static mount.
 module StaticFile
   TYPES = {
     ".css"   => "text/css; charset=utf-8",
@@ -24,8 +26,8 @@ module StaticFile
 
   module_function
 
-  # Returns a Response for an existing `public/<path>`, or nil to fall through
-  # to the application.
+  # Returns a Response for an existing file under `public/` or the local
+  # storage directory, or nil to fall through to the application.
   def serve(request)
     return nil unless request.request_method == "GET"
     return nil unless request.path_info.start_with?("/") && !request.path_info.include?("..")
@@ -33,8 +35,8 @@ module StaticFile
     path = request.path_info
     return nil if path == "/"
 
-    file = "public#{path}"
-    return nil unless File.file?(file)
+    file = resolve(path)
+    return nil unless file && File.file?(file)
 
     response                  = Response.new
     response.status           = 200
@@ -42,6 +44,20 @@ module StaticFile
     response["Cache-Control"] = "public, max-age=3600"
     response.body             = File.read(file)
     response
+  end
+
+  # Maps /uploads/<key> onto Storage.public_dir and everything else onto
+  # public/<path>. Returns nil for a path the app should handle.
+  def resolve(path)
+    upload = Storage.public_url
+    if path == upload || path.start_with?("#{upload}/")
+      rest = path[upload.length, path.length].to_s.sub(/\A\/+/, "")
+      return nil if rest.empty? || rest.include?("..")
+
+      "#{Storage.public_dir}/#{rest}"
+    else
+      "public#{path}"
+    end
   end
 
   def content_type(file)

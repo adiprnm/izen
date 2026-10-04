@@ -138,6 +138,44 @@ class NativeTest < Minitest::Test
     puts "ALL OK"
   RUBY
 
+  STORAGE_DRIVER = <<~'RUBY'
+    # frozen_string_literal: true
+    ENV["APP_ENV"] = "test"
+    root = ARGV[0]
+    Dir.chdir(root)
+    require File.join(root, "app.rb")
+
+    def check(label, condition)
+      puts "#{condition ? 'ok' : 'FAIL'} #{label}"
+      exit 1 unless condition
+    end
+
+    key = Storage.store({ filename: "avatar.png", tempfile: StringIO.new("bytes") })
+    check "store key", key.match?(/\A\d{4}\/\d{2}\/[0-9a-f]{32}\.png\z/)
+    check "read",      Storage.read(key) == "bytes"
+    check "exist",     Storage.exist?(key)
+    check "url",       Storage.url(key) == "/uploads/#{key}"
+
+    served = StaticFile.serve(Request.new("GET", "/uploads/#{key}", "", "", {}))
+    check "served", !served.nil? && served.status == 200 && served.body == "bytes"
+
+    check "delete", Storage.delete(key)
+    check "gone",   !Storage.exist?(key)
+
+    # The baked config can select another backend: STORAGE_SERVICE overrides the
+    # service name and the S3_* vars carry the settings (secrets stay in env).
+    ENV["STORAGE_SERVICE"] = "s3"
+    ENV["S3_BUCKET"]       = "bucket"
+    check "s3 backend",   Storage.backend == Storage::S3
+    check "s3 not served", Storage.public_url.nil?
+    check "s3 bucket",    Storage::S3.bucket == "bucket"
+    check "s3 key",       Storage::S3.object_key("a/b.png") == "a/b.png"
+
+    ENV["S3_PUBLIC_URL"] = "https://cdn.example.com/"
+    check "s3 public url", Storage::S3.url("a.png") == "https://cdn.example.com/a.png"
+    puts "ALL OK"
+  RUBY
+
   def test_generates_a_runnable_project_from_a_scaffolded_app
     Dir.mktmpdir("izen-native") do |dir|
       source = scaffold_project(dir)
@@ -363,6 +401,40 @@ class NativeTest < Minitest::Test
 
       error = assert_raises(Izen::Native::SpinNotFound) { builder.build }
       assert_includes error.message, "no spin executable"
+    end
+  end
+
+  def test_storage_round_trips_and_serves_uploads
+    Dir.mktmpdir("izen-native") do |dir|
+      source = scaffold_project(dir)
+      out    = File.join(dir, "native")
+
+      Izen::Native::Generator.new(source, out).run
+
+      output = run_driver(out, STORAGE_DRIVER)
+      assert_includes output, "ALL OK", "driver output:\n#{output}"
+    end
+  end
+
+  def test_bakes_storage_config_for_the_native_runtime
+    Dir.mktmpdir("izen-native") do |dir|
+      source = scaffold_project(dir)
+      out    = File.join(dir, "native")
+
+      File.write(File.join(source, "config", "storage.yml"), <<~YAML)
+        test:
+          service: s3
+          bucket: demo-bucket
+          endpoint: https://example.r2.cloudflarestorage.com
+      YAML
+
+      Izen::Native::Generator.new(source, out).run
+
+      config = File.read(File.join(out, "generated", "storage_config.rb"))
+      assert_includes config, "module StorageConfig"
+      assert_includes config, '"service" => "s3"'
+      assert_includes config, '"bucket" => "demo-bucket"'
+      assert_includes config, '"path" => "storage/uploads"'
     end
   end
 

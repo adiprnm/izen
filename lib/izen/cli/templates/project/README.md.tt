@@ -24,7 +24,8 @@ bundle exec izen dev
 | `app/layout.erb` | Shared ERB layout |
 | `migrations/` | Versioned up/down SQL migrations |
 | `config/database.yaml` | SQLite path per `APP_ENV` |
-| `storage/` | SQLite databases and the session secret |
+| `config/storage.yml` | Upload storage service per `APP_ENV` (default: `local`) |
+| `storage/` | SQLite databases, the session secret and uploaded files |
 | `config/deploy.yml` | Kamal deploy config for CRuby (git-ignored) |
 | `config/deploy.native.yml` | Kamal deploy config for the native binary (tracked) |
 | `Dockerfile.native` | Image build for the native binary (tracked) |

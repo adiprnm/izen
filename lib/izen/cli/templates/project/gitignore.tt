@@ -25,6 +25,10 @@
 /storage/*.sqlite3-*
 /storage/session_secret
 
+# Uploaded files (served at /uploads by the local storage service)
+/storage/uploads/*
+!/storage/uploads/.gitkeep
+
 # Spinel native build output (`izen native ...`); the Dockerfile.native and
 # config/deploy.native.yml that drive it live at the project root instead.
 /native/

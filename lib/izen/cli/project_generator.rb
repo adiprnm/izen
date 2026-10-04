@@ -31,6 +31,7 @@ module Izen
         ".env.example"             => "env.example.tt",
         ".gitignore"               => "gitignore.tt",
         "config/database.yaml"     => "database.yaml.tt",
+        "config/storage.yml"       => "storage.yaml.tt",
         "app/layout.erb"           => "layout.erb.tt",
         "test/test_helper.rb"      => "test_helper.rb.tt",
         "test/app_test.rb"         => "app_test.rb.tt",
@@ -38,7 +39,7 @@ module Izen
       }.freeze
 
       # Directories that hold user code/artifacts and must exist up front.
-      DIRECTORIES = %w[app migrations storage].freeze
+      DIRECTORIES = %w[app migrations storage storage/uploads].freeze
 
       def initialize(name, force: false, tests: true)
         @target = target_path(name)

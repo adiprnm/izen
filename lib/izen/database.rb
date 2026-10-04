@@ -1,8 +1,9 @@
 # frozen_string_literal: true
 
 require "sqlite3"
-require "yaml"
 require "fileutils"
+
+require_relative "config"
 
 # Owns the single SQLite connection for the process.
 #
@@ -22,7 +23,7 @@ module Izen
       end
 
       def config
-        @config ||= YAML.load_file(config_path)
+        @config ||= Izen::Config.load_yaml(config_path)
       end
 
       def env
