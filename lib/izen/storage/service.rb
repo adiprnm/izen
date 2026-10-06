@@ -29,6 +29,14 @@ module Izen
         raise NotImplementedError
       end
 
+      # Enumerates stored objects as an array of `{ key:, size: }` hashes,
+      # optionally restricted to keys starting with +prefix+. Used by
+      # Izen::Backup to archive uploads on a backend that is not on this
+      # machine (S3/R2). Backends that cannot enumerate return an empty array.
+      def list(prefix: nil)
+        []
+      end
+
       def url(_key, **_options)
         raise NotImplementedError
       end

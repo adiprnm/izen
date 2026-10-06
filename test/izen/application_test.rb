@@ -28,8 +28,8 @@ class ApplicationTest < Minitest::Test
       end
 
       r.get("cache") do
-        first  = Izen::Base::RequestCache.fetch("k") { "v1" }
-        second = Izen::Base::RequestCache.fetch("k") { "v2" }
+        first  = Izen::RequestCache.fetch("k") { "v1" }
+        second = Izen::RequestCache.fetch("k") { "v2" }
         "#{first}-#{second}"
       end
 

@@ -70,6 +70,15 @@ class StorageTest < Minitest::Test
     refute Izen::Storage.delete(key)
   end
 
+  def test_local_list_enumerates_stored_keys_with_sizes
+    Izen::Storage.store(upload("a"), key: "one.png")
+    Izen::Storage.store(upload("bb"), key: "nested/two.png")
+
+    entries = Izen::Storage.list.map { |entry| [ entry[:key], entry[:size] ] }.sort
+
+    assert_equal [ [ "nested/two.png", 2 ], [ "one.png", 1 ] ], entries
+  end
+
   def test_rejects_path_traversal
     assert_raises(Izen::Storage::Error) do
       Izen::Storage.store(upload, key: "../../etc/passwd")
@@ -143,9 +152,11 @@ class StorageTest < Minitest::Test
     NotFound = Class.new(StandardError)
 
     attr_reader :objects
+    attr_accessor :page_size
 
     def initialize
-      @objects = {}
+      @objects   = {}
+      @page_size = 100
     end
 
     def put_object(bucket:, key:, body:, content_type:)
@@ -167,6 +178,21 @@ class StorageTest < Minitest::Test
     def delete_object(bucket:, key:)
       @objects.delete([ bucket, key ])
       true
+    end
+
+    def list_objects_v2(bucket:, prefix: nil, continuation_token: nil)
+      keys = @objects.keys.select { |b, _k| b == bucket }.map { |_b, key| key }
+      keys = keys.select { |key| key.start_with?(prefix) } if prefix
+      keys = keys.sort
+
+      offset      = continuation_token.to_i
+      page        = keys[offset, @page_size] || []
+      next_offset = offset + page.size
+      truncated   = next_offset < keys.size
+      contents    = page.map { |key| Struct.new(:key, :size).new(key, @objects[[ bucket, key ]][:body].bytesize) }
+
+      Struct.new(:contents, :is_truncated, :next_continuation_token)
+            .new(contents, truncated, truncated ? next_offset.to_s : nil)
     end
 
     def presigned_url(bucket, key, expires_in)
@@ -225,6 +251,34 @@ class StorageTest < Minitest::Test
     assert_raises(Izen::Storage::Error) do
       Izen::Storage::S3.new({ "service" => "s3" }, root: @root)
     end
+  end
+
+  def test_s3_lists_objects_and_strips_the_prefix
+    service, = s3_service("prefix" => "media")
+    service.store(upload("a"), key: "one.png")
+    service.store(upload("bb"), key: "two.png")
+
+    entries = service.list.map { |entry| [ entry[:key], entry[:size] ] }.sort
+
+    assert_equal [ [ "one.png", 1 ], [ "two.png", 2 ] ], entries
+  end
+
+  def test_s3_list_filters_by_prefix
+    service, = s3_service("prefix" => "media")
+    service.store(upload("a"), key: "one.png")
+    service.store(upload("bb"), key: "two.png")
+
+    assert_equal [ "two.png" ], service.list(prefix: "two").map { |entry| entry[:key] }
+  end
+
+  def test_s3_list_follows_pagination
+    service, client  = s3_service
+    client.page_size = 2
+    service.store(upload("a"), key: "a.png")
+    service.store(upload("b"), key: "b.png")
+    service.store(upload("c"), key: "c.png")
+
+    assert_equal %w[a.png b.png c.png], service.list.map { |entry| entry[:key] }
   end
 
   private

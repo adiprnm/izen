@@ -5,9 +5,9 @@ require "rack/method_override"
 require "logger"
 require "json"
 
-require_relative "base/request_cache"
 require_relative "base/session_plugin"
 require_relative "health"
+require_relative "request_cache"
 require_relative "storage"
 
 module Izen
@@ -41,7 +41,7 @@ module Izen
   #   #render_not_found_page / #render_error_page, or add the optional
   #   `app/errors/not_found.erb` / `app/errors/error.erb` views),
   # - one access log line per request (#logger, override to customize),
-  # - a per-request cache (`Izen::Base::RequestCache`),
+  # - a per-request cache (`Izen::RequestCache`),
   # - #health (JSON probe of the database and schema) and #rotate_session!.
   class Application < Roda
     # Headers stamped on every response, including error pages.
@@ -50,6 +50,10 @@ module Izen
       "x-frame-options"        => "DENY",
       "referrer-policy"        => "strict-origin-when-cross-origin"
     }.freeze
+
+    # Path prefixes the access log skips: static assets and the storage mount,
+    # which the server logs (or serves) itself.
+    QUIET_PATHS = %w[/assets/ /vendor/ /uploads/ /favicon].freeze
 
     class << self
       def inherited(subclass)
@@ -89,11 +93,11 @@ module Izen
 
         subclass.before do
           @request_started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-          Izen::Base::RequestCache.begin!
+          Izen::RequestCache.begin!
         end
 
         subclass.after do |res|
-          Izen::Base::RequestCache.end!
+          Izen::RequestCache.end!
           log_access(res ? res[0] : 500)
         end
       end
@@ -120,19 +124,38 @@ module Izen
       end
     end
 
-    # Application logger. Outbound clients and the error handler use it; an app
-    # can override it (e.g. to point at a file or a service).
+    # Application logger. Outbound clients and the error handler use it. It
+    # prefers the Rack server's logger (`env["rack.logger"]`, e.g. one a
+    # framework or server installed) so log lines share a single sink instead
+    # of a second writer competing with the server's; otherwise it falls back
+    # to a stdout Logger. Override to point somewhere else entirely.
     def logger
-      @logger ||= Logger.new($stdout, level: ENV["APP_ENV"] == "test" ? Logger::ERROR : Logger::INFO)
+      server_logger || app_logger
     end
 
-    # One access log line per request, quiet in tests. Called from the after
-    # hook; override to change the format or skip some paths.
+    # The request-scoped server logger, or nil outside a request / when the
+    # server provides none.
+    def server_logger
+      env["rack.logger"] if defined?(@_request) && @_request
+    rescue StandardError
+      nil
+    end
+
+    def app_logger
+      @app_logger ||= Logger.new($stdout, level: ENV["APP_ENV"] == "test" ? Logger::ERROR : Logger::INFO)
+    end
+
+    # Optional structured access log. Off by default because Rack servers and
+    # `rackup` already log requests (Rack::CommonLogger, Puma); enable with
+    # `IZEN_ACCESS_LOG=1`. Static assets and the storage mount are never logged.
     def log_access(status)
+      return unless ENV["IZEN_ACCESS_LOG"] == "1"
+      return if quiet_path?(env["PATH_INFO"])
+
       started  = @request_started_at
       duration = started ? ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round(1) : nil
       suffix   = duration ? " #{duration}ms" : ""
-      logger.info("[request] #{env["REQUEST_METHOD"]} #{env["PATH_INFO"]} #{status}#{suffix}")
+      logger.info("[izen] #{env["REQUEST_METHOD"]} #{env["PATH_INFO"]} #{status}#{suffix}")
     rescue StandardError
       nil
     end
@@ -186,6 +209,10 @@ module Izen
       views = self.class.opts[:render][:views].to_s
       base  = views.start_with?("/") ? views : File.join(Izen.root, views)
       File.file?(File.join(base, "#{name}.erb"))
+    end
+
+    def quiet_path?(path)
+      QUIET_PATHS.any? { |prefix| path.to_s.start_with?(prefix) }
     end
   end
 end

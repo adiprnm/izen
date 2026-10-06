@@ -50,19 +50,15 @@ module Izen
       end
 
       def backup_uploads(path)
-        uploads = Izen::Storage.public_dir
-        entries = uploads && Dir.exist?(uploads) ? Dir.glob(File.join(uploads, "**", "*")).sort : []
-
         File.open(path, "wb") do |file|
           Zlib::GzipWriter.wrap(file) do |gz|
             Gem::Package::TarWriter.new(gz) do |tar|
-              entries.each do |entry|
-                relative = entry.delete_prefix("#{uploads}/")
-                if File.directory?(entry)
-                  tar.mkdir(relative, File.stat(entry).mode)
+              each_upload do |entry|
+                if entry[:directory]
+                  tar.mkdir(entry[:key], entry[:mode])
                 else
-                  tar.add_file_simple(relative, File.stat(entry).mode, File.size(entry)) do |io|
-                    File.open(entry, "rb") { |source| IO.copy_stream(source, io) }
+                  tar.add_file_simple(entry[:key], entry[:mode], entry[:size]) do |io|
+                    entry[:write].call(io)
                   end
                 end
               end
@@ -70,6 +66,46 @@ module Izen
           end
         end
         path
+      end
+
+      # Yields one entry per upload. A service backed by a directory on this
+      # machine is streamed from disk; a remote service (S3/R2) is enumerated
+      # through Izen::Storage.list and read object by object.
+      def each_upload(&block)
+        dir = Izen::Storage.public_dir
+        if dir && Dir.exist?(dir)
+          each_local_upload(dir, &block)
+        else
+          each_remote_upload(&block)
+        end
+      end
+
+      def each_local_upload(dir)
+        Dir.glob(File.join(dir, "**", "*")).sort.each do |path|
+          key = path.delete_prefix("#{dir}/")
+          if File.directory?(path)
+            yield({ key: key, directory: true, mode: File.stat(path).mode })
+          else
+            yield({
+              key:   key,
+              mode:  File.stat(path).mode,
+              size:  File.size(path),
+              write: ->(io) { File.open(path, "rb") { |source| IO.copy_stream(source, io) } }
+            })
+          end
+        end
+      end
+
+      def each_remote_upload
+        Izen::Storage.list.each do |object|
+          bytes = Izen::Storage.read(object[:key])
+          yield({
+            key:   object[:key],
+            mode:  0o644,
+            size:  bytes.bytesize,
+            write: ->(io) { io.write(bytes) }
+          })
+        end
       end
 
       # SQLite's VACUUM INTO takes a literal path, not a bind parameter.

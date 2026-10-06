@@ -47,6 +47,16 @@ module Izen
         File.file?(absolute(key))
       end
 
+      # Walks the storage directory, newest-agnostic (sorted by path). Keys are
+      # relative to the storage root, matching what `store` returns.
+      def list(prefix: nil)
+        return [] unless Dir.exist?(@path)
+
+        Dir.glob(File.join(@path, "**", "*")).select { |entry| File.file?(entry) }.map do |entry|
+          { key: entry.delete_prefix("#{@path}/"), size: File.size(entry) }
+        end.select { |entry| prefix.nil? || entry[:key].start_with?(prefix) }
+      end
+
       def url(key, **_options)
         "#{@url_base}/#{Key.normalize(key)}"
       end

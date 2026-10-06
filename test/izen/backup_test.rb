@@ -3,6 +3,7 @@
 require_relative "../test_helper"
 require "tmpdir"
 require "zlib"
+require "minitest/mock"
 
 class BackupTest < Minitest::Test
   def setup
@@ -37,5 +38,29 @@ class BackupTest < Minitest::Test
 
   def test_default_dir_is_under_storage
     assert_equal File.join(Izen.root, "storage", "backups"), Izen::Backup.default_dir
+  end
+
+  def test_backs_up_a_remote_service_by_listing
+    Izen::Storage.stub(:public_dir, nil) do
+      Izen::Storage.stub(:list, [ { key: "2026/10/a.png", size: 4 } ]) do
+        Izen::Storage.stub(:read, "png!") do
+          result = Izen::Backup.run(dir: @dir)
+
+          assert_equal "png!", tar_entries(result[:uploads])["2026/10/a.png"]
+        end
+      end
+    end
+  end
+
+  private
+
+  def tar_entries(path)
+    entries = {}
+    Zlib::GzipReader.open(path) do |gz|
+      Gem::Package::TarReader.new(gz) do |tar|
+        tar.each { |entry| entries[entry.full_name] = entry.read if entry.file? }
+      end
+    end
+    entries
   end
 end

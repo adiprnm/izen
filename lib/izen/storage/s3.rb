@@ -79,6 +79,34 @@ module Izen
         false
       end
 
+      # Lists objects under the optional +prefix+, following continuation
+      # tokens so a bucket larger than one page is fully enumerated. Keys are
+      # returned with the configured storage `prefix` stripped, matching what
+      # `store` returns. `size` is nil when a client does not report it.
+      def list(prefix: nil)
+        full_prefix = [ @prefix, prefix ].map(&:to_s).reject(&:empty?).join("/")
+        entries     = []
+        token       = nil
+
+        loop do
+          params                      = { bucket: @bucket }
+          params[:prefix]             = full_prefix unless full_prefix.empty?
+          params[:continuation_token] = token if token
+          response                    = client.list_objects_v2(**params)
+
+          Array(response.contents).each do |object|
+            key  = object.respond_to?(:key) ? object.key : object.to_s
+            size = object.respond_to?(:size) ? object.size : nil
+            entries << { key: strip_prefix(key), size: size }
+          end
+
+          token = response.respond_to?(:next_continuation_token) ? response.next_continuation_token : nil
+          break unless response.respond_to?(:is_truncated) && response.is_truncated && token
+        end
+
+        entries
+      end
+
       # A permanent URL when `public_url` is configured (public bucket or CDN),
       # otherwise a short-lived presigned URL — the right default for a private
       # bucket such as R2.
@@ -113,6 +141,15 @@ module Izen
       def object_key(key)
         key = Key.normalize(key)
         @prefix.empty? ? key : "#{@prefix}/#{key}"
+      end
+
+      # Inverse of #object_key: strips the configured prefix so callers see the
+      # same key they passed to `store`.
+      def strip_prefix(key)
+        return key if @prefix.empty?
+        return key unless key.start_with?("#{@prefix}/")
+
+        key.delete_prefix("#{@prefix}/")
       end
 
       def client

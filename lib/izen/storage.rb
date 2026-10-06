@@ -68,6 +68,12 @@ module Izen
         service.url(key, **options)
       end
 
+      # Enumerates stored objects as `{ key:, size: }` hashes (see
+      # Izen::Storage::Service#list).
+      def list(prefix: nil)
+        service.list(prefix: prefix)
+      end
+
       # Validates an upload as an image (extension, MIME, magic bytes, size).
       # Returns nil when acceptable, otherwise a human-readable reason.
       def image_error(upload)

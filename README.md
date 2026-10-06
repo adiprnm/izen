@@ -17,7 +17,7 @@ for a layer built around models and schemas.
 | `Izen::Base::Controller` | Roda-backed controller base (render, flash, request context) |
 | `Izen::Application` | Base Roda app: render, flash, signed-cookie sessions and PUT/PATCH/DELETE (with method override), rooted at `Izen.root` |
 | `Izen::Base::Session` | Signed-cookie sessions without OpenSSL |
-| `Izen::Base::RequestCache` | Per-request memoization shared by app modules |
+| `Izen::RequestCache` | Per-request memoization shared by app modules |
 | `Izen::Base::Job` | Single-thread background job base class + worker |
 | `Izen::Base::Batcher` | Write-behind buffer: persist fire-and-forget writes in batches |
 | `Izen::Base::Mailer` | Transactional mailer base class |
@@ -115,11 +115,19 @@ stays empty (Roda's default). The 500 handler logs the class, message and
 backtrace through `#logger` first. Override `#render_not_found_page` /
 `#render_error_page` to use a layout or different views.
 
-**Access log.** One line per request through `#logger` (quiet in `APP_ENV=test`):
+**Access log.** Optional, off by default — Rack servers and `rackup` already
+log requests (`Rack::CommonLogger`, Puma), so enabling it by default would
+duplicate them. Turn it on with `IZEN_ACCESS_LOG=1`; static assets and the
+storage mount are skipped:
 
 ```
-[request] GET /products 200 12.3ms
+[izen] GET /products 200 12.3ms
 ```
+
+`#logger` prefers the server's logger (`env["rack.logger"]`) when one is
+present, so lines share a single sink instead of a second writer competing with
+the server's; otherwise it falls back to a stdout Logger. Override `#logger` to
+point elsewhere.
 
 **Health check.** Declare the route and point your monitor (and the Kamal
 healthcheck) at it; it reports the database and the latest applied migration as
@@ -135,12 +143,12 @@ end
 successful login to start a fresh session (defeating session fixation) while
 keeping the listed keys.
 
-**Per-request cache.** The app opens `Izen::Base::RequestCache` in a before hook
+**Per-request cache.** The app opens `Izen::RequestCache` in a before hook
 and closes it after the request, so any app module can memoize without a
 reference to the Roda app:
 
 ```ruby
-Izen::Base::RequestCache.fetch("setting:store_name") { load_from_database }
+Izen::RequestCache.fetch("setting:store_name") { load_from_database }
 ```
 
 Outside a request (Rake tasks, tests) the cache is nil and `fetch` just yields.
@@ -179,7 +187,10 @@ key = Izen::Storage.store(params["avatar"])
 ```
 
 **Backups.** `Izen::Backup.run` snapshots the database with `VACUUM INTO`
-(consistent under WAL) and the uploads directory as a `.tar.gz`:
+(consistent under WAL) and the uploads as a `.tar.gz`. The uploads come from the
+active storage service: the local directory is streamed from disk, and a remote
+service (S3/R2) is enumerated through `Izen::Storage.list` and downloaded
+object by object — so a Cloudflare R2 bucket is backed up too:
 
 ```sh
 bundle exec rake db:backup                  # -> storage/backups/<stamp>/
@@ -187,8 +198,8 @@ bundle exec rake 'db:backup[/mnt/backups]'  # a mounted volume
 ```
 
 Restore by stopping the app, copying the snapshot over the database file
-(delete stale `-wal`/`-shm` first), extracting the uploads archive over
-`Izen::Storage.public_dir`, then starting the app.
+(delete stale `-wal`/`-shm` first), extracting the uploads archive over the
+storage location, then starting the app.
 
 ## Batched writes
 
@@ -251,6 +262,7 @@ Izen::Storage.url(key) # => "/uploads/2026/10/ab12….png"
 Izen::Storage.read(key)       # binary String
 Izen::Storage.exist?(key)     # => true
 Izen::Storage.delete(key)     # => true
+Izen::Storage.list            # => [ { key: "2026/10/ab12.png", size: 2048 }, ... ]
 ```
 
 `store` also accepts an uploaded-file object, a File/IO or a path on disk, and
@@ -258,8 +270,10 @@ returns the storage **key** — persist the key and derive the URL from it. Pass
 `key:` to choose a stable path yourself (e.g. `"avatars/#{user.id}.png"`);
 otherwise a random, date-sharded key that keeps the original extension is
 generated. Point `path` at a mounted volume in production so uploads survive
-deploys. Adding another backend means implementing `Izen::Storage::Service` and
-registering it in `Izen::Storage::SERVICES`.
+deploys. `list` enumerates the stored keys (used by `Izen::Backup` to archive a
+remote bucket); backends that cannot enumerate return an empty array. Adding
+another backend means implementing `Izen::Storage::Service` and registering it
+in `Izen::Storage::SERVICES`.
 
 The native build cannot read YAML, so `config/storage.yml` is baked into the
 generated project at build time; `S3_*` / `STORAGE_SERVICE` environment
