@@ -3,6 +3,11 @@
 require_relative "../test_helper"
 
 class RateLimitTest < TestSupport::DatabaseTest
+  def setup
+    super
+    Izen::RateLimit.ensure_table!
+  end
+
   def test_allows_up_to_the_limit_then_denies
     3.times { assert Izen::RateLimit.allow?("k", limit: 3, window: 60) }
 

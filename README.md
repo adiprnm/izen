@@ -27,6 +27,7 @@ for a layer built around models and schemas.
 | `Izen::Encryptor` | AES-256-GCM for secrets stored in the database |
 | `Izen::Dotenv` | Minimal `.env` loader (no dependency) |
 | `Izen::RateLimit` | Database-backed fixed-window rate limiter |
+| `Izen::ClientIP` | Real client IP behind Kamal/Cloudflare/proxies |
 | `Izen::Sanitizer` | Allow-list HTML sanitizer for rich text |
 | `Izen::Slug` | URL-friendly slug generation and uniqueness |
 | `Izen::Backup` | SQLite (`VACUUM INTO`) + uploads (`tar.gz`) backup |
@@ -156,14 +157,41 @@ Outside a request (Rake tasks, tests) the cache is nil and `fetch` just yields.
 ## Utilities
 
 **Rate limiting.** `Izen::RateLimit` is a database-backed fixed-window limiter,
-so the limit holds across workers. The `rate_limits` table is created on first
-use:
+so the limit holds across workers. `izen new` scaffolds the `rate_limits`
+table as a migration (`create_rate_limits`), so it shows up in
+`izen migration status`; run `izen migration migrate`. `Izen::RateLimit` is the
+low-level API:
 
 ```ruby
-unless Izen::RateLimit.allow?("login:#{request.ip}", limit: 10, window: 300)
+unless Izen::RateLimit.allow?("login:#{client_ip}", limit: 10, window: 300)
   halt 429
 end
 ```
+
+`Izen::Application#rate_limit!` wraps it and halts with 429 + `Retry-After`.
+The key is scoped to the client IP by default:
+
+```ruby
+r.post("login") do
+  rate_limit!("login", limit: 10, window: 300)                # "login:<client_ip>"
+  rate_limit!("magic_link", by: email, limit: 5, window: 900) # "magic_link:<email>"
+  rate_limit!("webhook", by: false, limit: 300)               # "webhook"
+end
+```
+
+**Client IP behind a proxy.** `request.ip` returns the proxy's address when the
+app is behind a reverse proxy, and behind Cloudflare it stops at the Cloudflare
+edge (a public IP). Use `Izen::ClientIP` (via `#client_ip`) instead:
+
+- it honors `CF-Connecting-IP` when Cloudflare is trusted (`TRUST_CLOUDFLARE=1`)
+  or the peer is in `trusted_proxies`;
+- otherwise it walks `Forwarded`/`X-Forwarded-For` from the right, trusting only
+  configured proxies (loopback + private ranges by default, so a directly
+  reachable app ignores a forged header).
+
+Set `TRUSTED_PROXIES` (comma-separated CIDRs) to add your own proxies, and only
+set `TRUST_CLOUDFLARE=1` when the origin is reachable **only** through
+Cloudflare (firewall it to Cloudflare's IP ranges).
 
 **Rich-text sanitizing.** `Izen::Sanitizer.sanitize` keeps a small allow-list of
 formatting tags/attributes and drops scripts, event handlers and

@@ -1,0 +1,11 @@
+-- Rate limiting (Izen::RateLimit): one row per key (e.g. "login:203.0.113.7"),
+-- holding the request count and when the current window ends. Rows are pruned
+-- opportunistically when a new window starts.
+CREATE TABLE IF NOT EXISTS rate_limits (
+  key        TEXT PRIMARY KEY,
+  count      INTEGER NOT NULL DEFAULT 0,
+  expires_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS index_rate_limits_on_expires_at ON rate_limits (expires_at);

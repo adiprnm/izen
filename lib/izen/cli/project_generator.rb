@@ -22,20 +22,22 @@ module Izen
 
       # Every generated file, relative to the project root.
       FILES = {
-        "Gemfile"                  => "Gemfile.tt",
-        "app.rb"                   => "app.rb.tt",
-        "config.ru"                => "config.ru.tt",
-        "Rakefile"                 => "Rakefile.tt",
-        "README.md"                => "README.md.tt",
-        "AGENTS.md"                => "AGENTS.md.tt",
-        ".env.example"             => "env.example.tt",
-        ".gitignore"               => "gitignore.tt",
-        "config/database.yaml"     => "database.yaml.tt",
-        "config/storage.yml"       => "storage.yaml.tt",
-        "app/layout.erb"           => "layout.erb.tt",
-        "test/test_helper.rb"      => "test_helper.rb.tt",
-        "test/app_test.rb"         => "app_test.rb.tt",
-        "test/native_scenarios.rb" => "native_scenarios.rb.tt"
+        "Gemfile"                                       => "Gemfile.tt",
+        "app.rb"                                        => "app.rb.tt",
+        "config.ru"                                     => "config.ru.tt",
+        "Rakefile"                                      => "Rakefile.tt",
+        "README.md"                                     => "README.md.tt",
+        "AGENTS.md"                                     => "AGENTS.md.tt",
+        ".env.example"                                  => "env.example.tt",
+        ".gitignore"                                    => "gitignore.tt",
+        "config/database.yaml"                          => "database.yaml.tt",
+        "config/storage.yml"                            => "storage.yaml.tt",
+        "migrations/000001_create_rate_limits.up.sql"   => "migrations/create_rate_limits.up.sql.tt",
+        "migrations/000001_create_rate_limits.down.sql" => "migrations/create_rate_limits.down.sql.tt",
+        "app/layout.erb"                                => "layout.erb.tt",
+        "test/test_helper.rb"                           => "test_helper.rb.tt",
+        "test/app_test.rb"                              => "app_test.rb.tt",
+        "test/native_scenarios.rb"                      => "native_scenarios.rb.tt"
       }.freeze
 
       # Directories that hold user code/artifacts and must exist up front.

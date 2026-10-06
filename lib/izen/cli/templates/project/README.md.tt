@@ -39,6 +39,24 @@ bundle exec izen module new post title:string body:text
 bundle exec izen migration migrate
 ```
 
+## Rate limiting
+
+`izen new` scaffolds the `rate_limits` table (migration `create_rate_limits`).
+Rate-limit a route with the `rate_limit!` helper — the key is scoped to the
+client IP by default, and a denied request gets `429` + `Retry-After`:
+
+```ruby
+r.post("login") do
+  rate_limit!("login", limit: 10, window: 300)                # "login:<client_ip>"
+  rate_limit!("magic_link", by: email, limit: 5, window: 900) # "magic_link:<email>"
+end
+```
+
+Behind a reverse proxy (Kamal's proxy, Cloudflare, ...) use `client_ip` instead
+of `request.ip`, which would otherwise be the proxy's address. Set
+`TRUST_CLOUDFLARE=1` (only when the origin is reachable *only* through
+Cloudflare) and/or `TRUSTED_PROXIES` (comma-separated CIDRs) in the environment.
+
 ## Tests
 
 ```sh

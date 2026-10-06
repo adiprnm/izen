@@ -74,6 +74,10 @@ class CliTest < TestSupport::DatabaseTest
     assert File.file?(File.join(project, ".gitignore"))
     assert File.directory?(File.join(project, "app"))
     assert File.directory?(File.join(project, "migrations"))
+    assert File.file?(File.join(project, "migrations", "000001_create_rate_limits.up.sql"))
+    assert File.file?(File.join(project, "migrations", "000001_create_rate_limits.down.sql"))
+    assert_includes File.read(File.join(project, "migrations", "000001_create_rate_limits.up.sql")),
+      "CREATE TABLE IF NOT EXISTS rate_limits"
     assert File.directory?(File.join(project, "storage"))
     assert File.file?(File.join(project, "storage", "uploads", ".gitkeep"))
 

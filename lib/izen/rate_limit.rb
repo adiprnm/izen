@@ -14,8 +14,12 @@ module Izen
   #
   # Backed by the database (not process memory) so the limit holds when the app
   # runs more than one worker and when a request lands on a different instance.
-  # The `rate_limits` table is created on first use, so no migration is needed;
-  # run `Izen::RateLimit.ensure_table!` explicitly if you prefer to control it.
+  #
+  # The `rate_limits` table is created by the migration `izen new` scaffolds
+  # (`create_rate_limits`), so it shows up in `izen migration status` like any
+  # other table. `ensure_table!` is available for tests and one-off scripts but
+  # is not called automatically — call it, or run the migration, before the
+  # first `allow?`.
   module RateLimit
     TABLE = "rate_limits"
 
@@ -50,12 +54,12 @@ module Izen
 
     class << self
       def repository
-        ensure_table!
         @repository ||= Repository.new
       end
 
-      # Creates the table when missing. Idempotent and cheap; safe to call from
-      # a migration as well.
+      # Creates the table when missing. Idempotent; `izen new` already scaffolds
+      # a migration for it, so this is mainly for tests and scripts. Not called
+      # by #allow?.
       def ensure_table!
         Izen::Database.connection.execute(<<~SQL)
           CREATE TABLE IF NOT EXISTS #{TABLE} (
@@ -80,7 +84,6 @@ module Izen
 
       # Reads the counter without incrementing.
       def count(key)
-        ensure_table!
         row = Izen::Database.connection.get_first_row(
           "SELECT count FROM #{TABLE} WHERE key = ? LIMIT 1", [ key.to_s ]
         )
@@ -88,7 +91,6 @@ module Izen
       end
 
       def clear(key)
-        ensure_table!
         repository.clear(key)
       end
 

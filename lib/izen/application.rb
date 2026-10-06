@@ -6,7 +6,9 @@ require "logger"
 require "json"
 
 require_relative "base/session_plugin"
+require_relative "client_ip"
 require_relative "health"
+require_relative "rate_limit"
 require_relative "request_cache"
 require_relative "storage"
 
@@ -189,6 +191,38 @@ module Izen
       response["content-type"] = "application/json; charset=utf-8"
       response.status          = result[:status] == "ok" ? 200 : 503
       JSON.generate(result)
+    end
+
+    # The real client IP behind a reverse proxy (Kamal, Cloudflare, ...). Uses
+    # Izen::ClientIP, which honors `CF-Connecting-IP` when the edge is trusted
+    # and otherwise walks `X-Forwarded-For` behind a trusted proxy. Use this
+    # instead of `request.ip` for rate limiting and logging.
+    def client_ip
+      Izen::ClientIP.call(request.env)
+    end
+
+    # Enforces a rate limit and halts with 429 (plus Retry-After) when the
+    # window is exhausted. By default the key is scoped to the client IP, so
+    # the common case is one call:
+    #
+    #   rate_limit!("login", limit: 10, window: 300)                 # -> "login:<client_ip>"
+    #   rate_limit!("magic_link", by: email, limit: 5, window: 900)  # -> "magic_link:<email>"
+    #   rate_limit!("webhook", by: false, limit: 300)                # -> "webhook"
+    #
+    # Callable from a route and, through Base::Controller's delegation, from a
+    # controller. The `rate_limits` table comes from the migration scaffolded by
+    # `izen new` (or `Izen::RateLimit.ensure_table!`).
+    def rate_limit!(key, limit:, window: 60, by: :ip, message: "Too Many Requests")
+      scope = by == :ip ? client_ip : (by.nil? || by == false ? nil : by.to_s)
+      full  = scope.nil? ? key.to_s : "#{key}:#{scope}"
+
+      return if Izen::RateLimit.allow?(full, limit: limit, window: window)
+
+      request.halt(
+        [ 429,
+          { "content-type" => "text/plain; charset=utf-8", "retry-after" => window.to_i.to_s },
+          [ message ] ]
+      )
     end
 
     # Drops the current session and starts a fresh one, keeping the listed keys
