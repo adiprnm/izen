@@ -15,6 +15,12 @@ module Izen
     # this app's name) so the module can be dropped into any project as-is.
     THREAD_KEY = :database_connection
 
+    # How long SQLite waits for the write lock before raising SQLITE_BUSY.
+    # WAL lets readers and one writer run together, but a second writer still
+    # fails immediately without a timeout; a wait lets background jobs and web
+    # requests serialize instead. Override with SQLITE_BUSY_TIMEOUT (ms).
+    BUSY_TIMEOUT_MS = 5_000
+
     class << self
       # One connection per thread: the web process may run background jobs on
       # separate threads, and SQLite connections are not safe to share.
@@ -50,7 +56,16 @@ module Izen
         db = SQLite3::Database.new(database_path, results_as_hash: true)
         db.execute("PRAGMA journal_mode = WAL")
         db.execute("PRAGMA foreign_keys = ON")
+        db.execute("PRAGMA busy_timeout = #{busy_timeout}")
         db
+      end
+
+      # The busy timeout in milliseconds, from SQLITE_BUSY_TIMEOUT when set and
+      # valid, otherwise BUSY_TIMEOUT_MS.
+      def busy_timeout
+        Integer(ENV.fetch("SQLITE_BUSY_TIMEOUT", BUSY_TIMEOUT_MS))
+      rescue ArgumentError, TypeError
+        BUSY_TIMEOUT_MS
       end
 
       def disconnect

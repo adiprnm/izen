@@ -20,4 +20,13 @@ class DatabaseTest < Minitest::Test
 
     refute_same main, other
   end
+
+  def test_sets_a_busy_timeout
+    assert_equal Izen::Database::BUSY_TIMEOUT_MS, Izen::Database.connection.get_first_value("PRAGMA busy_timeout")
+  end
+
+  def test_enables_wal_and_foreign_keys
+    assert_equal "wal", Izen::Database.connection.get_first_value("PRAGMA journal_mode").downcase
+    assert_equal 1, Izen::Database.connection.get_first_value("PRAGMA foreign_keys")
+  end
 end

@@ -64,11 +64,13 @@ module Izen
         message
       end
 
-      # Forwards app-provided helpers to the Roda app instance.
-      def method_missing(name, *args, &block)
+      # Forwards app-provided helpers to the Roda app instance. Keyword
+      # arguments are forwarded too, so `app_helper(preserve: ["cart"])` reaches
+      # the helper as keywords instead of a positional Hash.
+      def method_missing(name, *args, **kwargs, &block)
         return super unless app.respond_to?(name)
 
-        app.public_send(name, *args, &block)
+        app.public_send(name, *args, **kwargs, &block)
       end
 
       def respond_to_missing?(name, include_private = false)

@@ -25,6 +25,9 @@
 /storage/*.sqlite3-*
 /storage/session_secret
 
+# Local database/upload backups (`rake db:backup`)
+/storage/backups/
+
 # Uploaded files (served at /uploads by the local storage service)
 /storage/uploads/*
 !/storage/uploads/.gitkeep

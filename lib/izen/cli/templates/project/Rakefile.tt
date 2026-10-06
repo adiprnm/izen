@@ -8,6 +8,19 @@ Rake::TestTask.new(:test) do |t|
   t.warning    = false
 end
 
+namespace :db do
+  desc "Back up the SQLite database and uploads (optional DIR)"
+  task :backup, [ :dir ] do |_t, args|
+    require "izen/backup"
+
+    Izen.root = __dir__
+    result    = Izen::Backup.run(dir: args[:dir])
+    puts "backup #{result[:stamp]}"
+    puts "  database: #{result[:database]}"
+    puts "  uploads:  #{result[:uploads]}"
+  end
+end
+
 namespace :native do
   desc "Lower this app to a Spinel project (native/)"
   task :generate do

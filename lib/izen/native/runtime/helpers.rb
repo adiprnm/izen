@@ -66,4 +66,24 @@ module Helpers
   def format_datetime(time)
     time&.getlocal&.strftime("%d/%m/%Y %H:%M")
   end
+
+  # Liveness/readiness probe, mirroring `Izen::Application#health`. Expose it
+  # with `r.get("health") { health }` in app.rb.
+  def health
+    database  = Database.connection.get_first_value("SELECT 1") == 1 ? "ok" : "error"
+    migration = Database.connection.get_first_value("SELECT MAX(version) FROM schema_migrations")
+    result    = {
+      "status"    => database == "ok" ? "ok" : "degraded",
+      "database"  => database,
+      "migration" => migration
+    }
+
+    response["content-type"] = "application/json; charset=utf-8"
+    response.status          = database == "ok" ? 200 : 503
+    SessionCodec.generate_json(result)
+  rescue StandardError => error
+    response["content-type"] = "application/json; charset=utf-8"
+    response.status          = 503
+    SessionCodec.generate_json({ "status" => "error", "database" => "error", "error" => error.class.name })
+  end
 end

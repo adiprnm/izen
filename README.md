@@ -17,14 +17,20 @@ for a layer built around models and schemas.
 | `Izen::Base::Controller` | Roda-backed controller base (render, flash, request context) |
 | `Izen::Application` | Base Roda app: render, flash, signed-cookie sessions and PUT/PATCH/DELETE (with method override), rooted at `Izen.root` |
 | `Izen::Base::Session` | Signed-cookie sessions without OpenSSL |
+| `Izen::Base::RequestCache` | Per-request memoization shared by app modules |
 | `Izen::Base::Job` | Single-thread background job base class + worker |
 | `Izen::Base::Batcher` | Write-behind buffer: persist fire-and-forget writes in batches |
 | `Izen::Base::Mailer` | Transactional mailer base class |
-| `Izen::Database` | Thread-local SQLite connection (WAL + foreign keys) |
-| `Izen::Storage` | Upload file storage — local disk or S3-compatible, configured in `config/storage.yml` |
+| `Izen::Database` | Thread-local SQLite connection (WAL + foreign keys + busy timeout) |
+| `Izen::Storage` | Upload file storage — local disk or S3-compatible, configured in `config/storage.yml`, with image validation |
 | `Izen::HTTP` | Small HTTP client supporting every HTTP method |
 | `Izen::Encryptor` | AES-256-GCM for secrets stored in the database |
 | `Izen::Dotenv` | Minimal `.env` loader (no dependency) |
+| `Izen::RateLimit` | Database-backed fixed-window rate limiter |
+| `Izen::Sanitizer` | Allow-list HTML sanitizer for rich text |
+| `Izen::Slug` | URL-friendly slug generation and uniqueness |
+| `Izen::Backup` | SQLite (`VACUUM INTO`) + uploads (`tar.gz`) backup |
+| `Izen::Health` | Database + migration probe for `/health` |
 | `Izen::Cli` | Project scaffolding, migrations + module scaffolding |
 | `Izen::Native` | Lower the app to a [Spinel](https://github.com/matz/spinel) `spin` project and build one native binary |
 
@@ -93,6 +99,96 @@ It also enables `:all_verbs` so routes can match `r.put`, `r.patch` and
   <button>Delete</button>
 </form>
 ```
+
+## Production defaults
+
+`Izen::Application` installs a set of production defaults an app can override.
+
+**Security headers.** Every response — including error pages — carries
+`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and
+`Referrer-Policy: strict-origin-when-cross-origin`. Add more with another
+`plugin :default_headers` call.
+
+**Friendly error pages.** A 404 renders `app/errors/not_found.erb` when it
+exists, and a 500 renders `app/errors/error.erb`; without those views the body
+stays empty (Roda's default). The 500 handler logs the class, message and
+backtrace through `#logger` first. Override `#render_not_found_page` /
+`#render_error_page` to use a layout or different views.
+
+**Access log.** One line per request through `#logger` (quiet in `APP_ENV=test`):
+
+```
+[request] GET /products 200 12.3ms
+```
+
+**Health check.** Declare the route and point your monitor (and the Kamal
+healthcheck) at it; it reports the database and the latest applied migration as
+JSON, with `200` when healthy and `503` otherwise:
+
+```ruby
+route do |r|
+  r.get("health") { health }
+end
+```
+
+**Session rotation.** Call `rotate_session!(preserve: ["cart_token"])` after a
+successful login to start a fresh session (defeating session fixation) while
+keeping the listed keys.
+
+**Per-request cache.** The app opens `Izen::Base::RequestCache` in a before hook
+and closes it after the request, so any app module can memoize without a
+reference to the Roda app:
+
+```ruby
+Izen::Base::RequestCache.fetch("setting:store_name") { load_from_database }
+```
+
+Outside a request (Rake tasks, tests) the cache is nil and `fetch` just yields.
+
+## Utilities
+
+**Rate limiting.** `Izen::RateLimit` is a database-backed fixed-window limiter,
+so the limit holds across workers. The `rate_limits` table is created on first
+use:
+
+```ruby
+unless Izen::RateLimit.allow?("login:#{request.ip}", limit: 10, window: 300)
+  halt 429
+end
+```
+
+**Rich-text sanitizing.** `Izen::Sanitizer.sanitize` keeps a small allow-list of
+formatting tags/attributes and drops scripts, event handlers and
+`javascript:` URLs. Sanitize on write and on render:
+
+```ruby
+product.description = Izen::Sanitizer.sanitize(params["description"])
+```
+
+**Slugs.** `Izen::Slug.generate`/`.unique` turn a title into a URL-friendly,
+collision-free slug.
+
+**Image upload validation.** `Izen::Storage.image_error(upload)` returns nil for
+an acceptable image, or a reason (extension, MIME, magic bytes, 5 MB cap):
+
+```ruby
+if (error = Izen::Storage.image_error(params["avatar"]))
+  return flash("alert", error)
+end
+key = Izen::Storage.store(params["avatar"])
+```
+
+**Backups.** `Izen::Backup.run` snapshots the database with `VACUUM INTO`
+(consistent under WAL) and the uploads directory as a `.tar.gz`:
+
+```sh
+bundle exec rake db:backup                  # -> storage/backups/<stamp>/
+bundle exec rake 'db:backup[/mnt/backups]'  # a mounted volume
+```
+
+Restore by stopping the app, copying the snapshot over the database file
+(delete stale `-wal`/`-shm` first), extracting the uploads archive over
+`Izen::Storage.public_dir`, then starting the app.
 
 ## Batched writes
 

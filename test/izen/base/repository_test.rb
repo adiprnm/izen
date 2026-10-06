@@ -40,4 +40,27 @@ class RepositoryTest < TestSupport::DatabaseTest
     assert_equal "2026-08-13 05:56:57.123456", @repository.sqlite_time(Time.utc(2026, 8, 13, 5, 56, 57, 123_456))
     assert_nil @repository.sqlite_time(nil)
   end
+
+  def test_savepoint_rolls_back_only_its_block
+    @repository.create(TestSupport::Widgets::Model.new(name: "Keep", price: 1))
+
+    assert_raises(RuntimeError) do
+      @repository.savepoint do
+        @repository.create(TestSupport::Widgets::Model.new(name: "Temp", price: 2))
+        raise "boom"
+      end
+    end
+
+    assert_equal [ "Keep" ], @repository.all.map(&:name)
+  end
+
+  def test_savepoint_returns_the_block_result_on_success
+    result = @repository.savepoint do
+      @repository.create(TestSupport::Widgets::Model.new(name: "Kept", price: 1))
+      :done
+    end
+
+    assert_equal :done, result
+    assert_equal [ "Kept" ], @repository.all.map(&:name)
+  end
 end

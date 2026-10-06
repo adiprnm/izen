@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "securerandom"
+
 require_relative "../database"
 
 module Izen
@@ -51,6 +53,31 @@ module Izen
         return yield if db.transaction_active?
 
         db.transaction(&block)
+      end
+
+      # Runs the block as one atomic unit even when a transaction is already
+      # open (the test harness does this). A plain transaction when none is
+      # open; otherwise a SAVEPOINT, which the block's failure rolls back to.
+      # The sqlite adapter here does not support `transaction(savepoint: true)`,
+      # so the savepoint is managed explicitly.
+      def savepoint
+        return db.transaction { yield } unless db.transaction_active?
+
+        name      = "izen_savepoint_#{SecureRandom.hex(4)}"
+        committed = false
+        db.execute("SAVEPOINT #{name}")
+        begin
+          result    = yield
+          committed = true
+          result
+        ensure
+          if committed
+            db.execute("RELEASE SAVEPOINT #{name}")
+          else
+            db.execute("ROLLBACK TO SAVEPOINT #{name}")
+            db.execute("RELEASE SAVEPOINT #{name}")
+          end
+        end
       end
 
       # Formats a Time for a SQLite DATETIME column.

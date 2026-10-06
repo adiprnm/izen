@@ -68,6 +68,16 @@ module Izen
         service.url(key, **options)
       end
 
+      # Validates an upload as an image (extension, MIME, magic bytes, size).
+      # Returns nil when acceptable, otherwise a human-readable reason.
+      def image_error(upload)
+        Validation.image_error(upload)
+      end
+
+      def image?(upload)
+        Validation.image?(upload)
+      end
+
       # The active service instance, built from config/storage.yml.
       def service
         @service ||= build_service
@@ -144,6 +154,7 @@ end
 # must define the module first.
 require_relative "storage/service"
 require_relative "storage/upload"
+require_relative "storage/validation"
 require_relative "storage/key"
 require_relative "storage/local"
 require_relative "storage/s3"

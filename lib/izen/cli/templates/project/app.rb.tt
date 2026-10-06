@@ -23,6 +23,10 @@ end
 # Rendering, flash and sessions are wired up by Izen::Application.
 class App < Izen::Application
   route do |r|
+    # Liveness/readiness probe: JSON with the database status and latest
+    # migration. Point the Kamal healthcheck and any monitor at it.
+    r.get("health") { health }
+
     r.root do
       "Hello from <%= @title %>."
     end
