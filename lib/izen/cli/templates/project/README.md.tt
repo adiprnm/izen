@@ -27,6 +27,8 @@ bundle exec izen dev
 | `config/storage.yml` | Upload storage service per `APP_ENV` (default: `local`) |
 | `storage/` | SQLite databases, the session secret and uploaded files |
 | `config/deploy.yml` | Kamal deploy config for CRuby (git-ignored) |
+| `Dockerfile` | Image build for the CRuby (Puma) deploy (tracked) |
+| `.dockerignore` | Build context for the CRuby image (tracked) |
 | `config/deploy.native.yml` | Kamal deploy config for the native binary (tracked) |
 | `Dockerfile.native` | Image build for the native binary (tracked) |
 | `.kamal/` | Kamal secrets (git-ignored) |
@@ -65,10 +67,20 @@ bundle exec rake test
 
 ## Deploy (Kamal)
 
-`izen new` scaffolds `config/deploy.yml` (CRuby), `config/deploy.native.yml`
-(native) and `.kamal/secrets-common` for a [Kamal](https://kamal-deploy.org)
-deploy. Fill in the placeholder server, host and image, export the secrets, then
-build and ship the native binary:
+`izen new` scaffolds `config/deploy.yml` and `Dockerfile` (CRuby),
+`config/deploy.native.yml` and `Dockerfile.native` (native) and
+`.kamal/secrets-common` for a [Kamal](https://kamal-deploy.org) deploy. Fill in
+the placeholder server, host and image, export the secrets, then deploy the
+CRuby (Puma) app from the project root:
+
+```sh
+export SESSION_SECRET=$(openssl rand -hex 32)
+export APP_ENCRYPTION_KEY=$(openssl rand -hex 32)
+bundle exec kamal -c config/deploy.yml setup    # first time
+bundle exec kamal -c config/deploy.yml deploy   # build Dockerfile + deploy
+```
+
+For the native build, pack it first and use its own config:
 
 ```sh
 bundle exec izen native pack
@@ -97,5 +109,6 @@ volume, add `config/deploy.native.staging.yml` and deploy with
 `bundle exec izen native deploy -d staging`.
 
 `config/deploy.yml` (CRuby) and `.kamal/` are git-ignored locally: they hold
-server details and secrets. `config/deploy.native.yml` and `Dockerfile.native`
-are tracked templates — the actual secrets stay in `.kamal/secrets-common`.
+server details and secrets. The `Dockerfile`, `.dockerignore`,
+`config/deploy.native.yml` and `Dockerfile.native` are tracked templates — the
+actual secrets stay in `.kamal/secrets-common`.

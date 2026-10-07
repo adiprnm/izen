@@ -1,0 +1,34 @@
+# Keep the CRuby image build context small (see Dockerfile). The native build has
+# its own .dockerignore under native/, which is that context's root.
+.git/
+.github/
+.bundle/
+vendor/bundle/
+log/
+tmp/
+coverage/
+native/
+
+# Runtime data: the SQLite database, the session secret and uploaded files come
+# from the mounted volume, never from the image.
+storage/*.db
+storage/*.db-*
+storage/*.sqlite3
+storage/*.sqlite3-*
+storage/session_secret
+storage/backups/
+storage/uploads/*
+!storage/uploads/.gitkeep
+
+# Local-only deploy config and secrets (Dockerfile.native drives the other image).
+.kamal/
+config/deploy*.yml
+Dockerfile.native
+
+# Local environment (never bake secrets into the image).
+.env
+.env.*
+!.env.example
+
+*.md
+.ruby-lsp/

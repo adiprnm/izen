@@ -66,7 +66,9 @@ class CliTest < TestSupport::DatabaseTest
     assert File.file?(File.join(project, "config", "storage.yml"))
     assert File.file?(File.join(project, "config", "deploy.yml"))
     assert File.file?(File.join(project, "config", "deploy.native.yml"))
+    assert File.file?(File.join(project, "Dockerfile"))
     assert File.file?(File.join(project, "Dockerfile.native"))
+    assert File.file?(File.join(project, ".dockerignore"))
     assert File.file?(File.join(project, ".kamal", "secrets-common"))
     assert File.file?(File.join(project, "app", "layout.erb"))
     assert File.file?(File.join(project, "test", "test_helper.rb"))
@@ -111,6 +113,17 @@ class CliTest < TestSupport::DatabaseTest
     assert_includes native, "blog_native_storage:/app/storage"
 
     assert_includes File.read(File.join(project, "Dockerfile.native")), "ca-certificates"
+
+    dockerfile = File.read(File.join(project, "Dockerfile"))
+    assert_includes dockerfile, '"puma"'
+    assert_includes dockerfile, '"config.ru"'
+    assert_includes dockerfile, "libsqlite3-dev"
+    assert_includes dockerfile, "EXPOSE 3000"
+    assert_includes dockerfile, "VOLUME /app/storage"
+
+    dockerignore = File.read(File.join(project, ".dockerignore"))
+    assert_includes dockerignore, "storage/*.db"
+    assert_includes dockerignore, ".env"
 
     secrets = File.read(File.join(project, ".kamal", "secrets-common"))
     assert_includes secrets, "SESSION_SECRET=$SESSION_SECRET"

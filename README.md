@@ -327,16 +327,16 @@ izen module new post title:string body:text    # scaffold a domain module
 `config/database.yaml`, `config/storage.yml`, `app/layout.erb`, `Rakefile`,
 `README.md`,
 `.env.example`, a smoke test, and the `app/`, `migrations/`, `storage/` and
-`storage/uploads/` directories. It also scaffolds a Kamal deploy setup — `config/deploy.yml`
-(CRuby), `config/deploy.native.yml` and `Dockerfile.native` (native) and
-`.kamal/secrets-common` — for the native build (see
+`storage/uploads/` directories. It also scaffolds a Kamal deploy setup —
+`config/deploy.yml` and `Dockerfile` (CRuby/Puma), `config/deploy.native.yml`
+and `Dockerfile.native` (native) and `.kamal/secrets-common` (see
 [Kamal deployment](#kamal-deployment)).
 The generated `.gitignore` ignores Bundler caches, local `.env` files (keeping
 `.env.example`), the local CRuby `config/deploy.yml` and `.kamal/`, `/log/`,
 `/tmp/` and `/coverage/`, the SQLite databases and session secret under
-`storage/`, Spinel's `native/` build output, and editor/OS noise. The native
-deploy template (`config/deploy.native.yml`) and `Dockerfile.native` are kept
-tracked. Pass `--force` to scaffold
+`storage/`, Spinel's `native/` build output, and editor/OS noise. The `Dockerfile`
+(CRuby), `.dockerignore`, `config/deploy.native.yml` and `Dockerfile.native`
+(native) are kept tracked. Pass `--force` to scaffold
 into a non-empty directory or `--no-test` to skip the test files.
 
 `izen module new` writes
@@ -488,20 +488,40 @@ The generated runtime is written to Spinel's subset. A few non-obvious rules
 
 ## Kamal deployment
 
-`izen new` scaffolds three deploy files so the app ships with no extra setup:
+`izen new` scaffolds the deploy files so the app ships with no extra setup:
 
 - `config/deploy.yml` — the CRuby (Roda/Puma) Kamal config, git-ignored like
-  any local deploy config.
+  any local deploy config. It builds the image from the project-root
+  `Dockerfile` and healthchecks `/health`.
+- `Dockerfile` — the CRuby (Roda/Puma) image, tracked at the project root. A
+  multi-stage build compiles the native gems (sqlite3, from the Git-sourced
+  izen) and ships a `ruby:slim` runtime with `bundle exec puma` on :3000.
+- `.dockerignore` — trims that build context (`.git`, `native/`, the SQLite
+  databases, `.env`, `.kamal/`, ...) so runtime data and secrets never bake
+  into the CRuby image.
 - `config/deploy.native.yml` — a standalone Kamal config for the native binary,
   tracked in the repository. Its `builder` block pins `context: "native"`
   (the generated build directory that holds `pack/`) and
   `dockerfile: "Dockerfile.native"`.
 - `Dockerfile.native` — the native image, tracked at the project root next to
-  the app's own `Dockerfile`. It builds the Spinel binary from `native/pack`
+  the CRuby `Dockerfile`. It builds the Spinel binary from `native/pack`
   and ships a minimal runtime image.
 
 `.kamal/secrets-common` (git-ignored) reads `SESSION_SECRET` /
 `APP_ENCRYPTION_KEY` from the environment for both configs.
+
+To ship the CRuby (Puma) app, fill in the placeholder server, host and image in
+`config/deploy.yml`, export the secrets and deploy from the project root:
+
+```sh
+export SESSION_SECRET=$(openssl rand -hex 32)
+export APP_ENCRYPTION_KEY=$(openssl rand -hex 32)
+kamal -c config/deploy.yml setup   # first time: provision server/registry/volume
+kamal -c config/deploy.yml deploy  # build Dockerfile + rolling deploy
+```
+
+The database and session secret live on the `<name>_storage` volume mounted at
+`/app/storage`, so redeploys keep their data.
 
 Fill in the placeholder server, host and image, then pack and deploy the
 native binary **from the project root** (Kamal resolves `Dockerfile.native`
@@ -532,8 +552,9 @@ volume, add `config/deploy.native.staging.yml` and deploy with
 `izen native deploy -d staging`.
 
 The CRuby `config/deploy.yml` and `.kamal/` are git-ignored (they hold server
-details and secrets); `config/deploy.native.yml` and `Dockerfile.native` are
-tracked templates. Keep the real secrets on disk.
+details and secrets); the `Dockerfile` (CRuby), `.dockerignore`,
+`config/deploy.native.yml` and `Dockerfile.native` are tracked templates. Keep
+the real secrets on disk.
 
 ## License
 

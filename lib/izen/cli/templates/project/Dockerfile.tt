@@ -1,0 +1,41 @@
+# syntax=docker/dockerfile:1
+# Production image for the CRuby (Roda/Puma) build of <%= @title %>.
+#
+# Built from the project root by Kamal (see config/deploy.yml). SQLite databases
+# and the session secret live on the <%= @name %>_storage volume mounted at
+# /app/storage, so redeploys keep their data. For the native (Spinel) image, use
+# Dockerfile.native instead.
+
+# ---- build -------------------------------------------------------------------
+# Build the native gems (sqlite3) against a matching libsqlite3.
+FROM ruby:<%= @ruby_version %>-slim AS build
+RUN apt-get update -qq \
+ && apt-get install --no-install-recommends -y build-essential git libsqlite3-dev \
+ && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+ENV BUNDLE_PATH=/usr/local/bundle \
+    BUNDLE_WITHOUT=development:test \
+    BUNDLE_JOBS=4
+COPY Gemfile Gemfile.lock ./
+RUN bundle install
+COPY . .
+
+# ---- runtime -----------------------------------------------------------------
+FROM ruby:<%= @ruby_version %>-slim
+RUN apt-get update -qq \
+ && apt-get install --no-install-recommends -y ca-certificates libsqlite3-0 \
+ && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+ENV APP_ENV=production \
+    PORT=3000 \
+    BUNDLE_PATH=/usr/local/bundle \
+    BUNDLE_WITHOUT=development:test
+COPY --from=build /usr/local/bundle /usr/local/bundle
+COPY --from=build /app /app
+RUN useradd --uid 1001 --create-home app \
+ && mkdir -p storage \
+ && chown -R app:app /app
+USER app
+VOLUME /app/storage
+EXPOSE 3000
+CMD ["bundle", "exec", "puma", "-b", "tcp://0.0.0.0:3000", "config.ru"]

@@ -23,6 +23,8 @@ module Izen
       # Every generated file, relative to the project root.
       FILES = {
         "Gemfile"                                       => "Gemfile.tt",
+        "Dockerfile"                                    => "Dockerfile.tt",
+        ".dockerignore"                                 => "dockerignore.tt",
         "app.rb"                                        => "app.rb.tt",
         "config.ru"                                     => "config.ru.tt",
         "Rakefile"                                      => "Rakefile.tt",
@@ -44,11 +46,12 @@ module Izen
       DIRECTORIES = %w[app migrations storage storage/uploads].freeze
 
       def initialize(name, force: false, tests: true)
-        @target = target_path(name)
-        @name   = File.basename(@target)
-        @title  = @name.split(/[-_]/).map(&:capitalize).join(" ")
-        @force  = force
-        @tests  = tests
+        @target        = target_path(name)
+        @name          = File.basename(@target)
+        @title         = @name.split(/[-_]/).map(&:capitalize).join(" ")
+        @ruby_version  = RUBY_VERSION[/\d+\.\d+/]
+        @force         = force
+        @tests         = tests
       end
 
       def call
@@ -116,6 +119,7 @@ module Izen
         puts "Kamal deploy config written to #{Style.path('config/deploy.yml')} (CRuby) " \
              "and #{Style.path('config/deploy.native.yml')} (native), " \
              "with secrets in #{Style.path('.kamal/secrets-common')}."
+        puts "CRuby image builds from #{Style.path('Dockerfile')}; native from #{Style.path('Dockerfile.native')}."
       end
     end
   end

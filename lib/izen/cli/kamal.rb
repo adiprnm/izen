@@ -21,9 +21,9 @@ module Izen
           # Kamal deployment configuration for #{name} (CRuby/Puma).
           #
           # `izen new` writes this at the project root as a starting point: fill
-          # in the server, host and registry, and ship it with your own
-          # Dockerfile. For the native (Spinel) build, use config/deploy.native.yml
-          # and Dockerfile.native instead.
+          # in the server, host and registry. The image is built from the
+          # project-root Dockerfile next to this config (the native Spinel build
+          # uses config/deploy.native.yml and Dockerfile.native instead).
           #
           #   kamal -c config/deploy.yml setup    # first time; then: deploy
           #
@@ -45,10 +45,10 @@ module Izen
           proxy:
             ssl: true
             host: example.com
-            # The native server listens on :3000 (see the Dockerfile).
+            # The Puma server listens on :3000 (see the Dockerfile).
             app_port: 3000
             healthcheck:
-              path: /
+              path: /health
               interval: 5
               timeout: 5
 
