@@ -49,6 +49,12 @@ module Izen
           end
         end
 
+        # Schedules #perform_now every +interval+ seconds on Izen::Scheduler.
+        # The scheduler is opt-in (SCHEDULER=1); registering is always safe.
+        def every(interval, name: nil)
+          Izen::Scheduler.every(interval, name: name || "job:#{self}") { perform_now }
+        end
+
         private
 
         def ensure_worker

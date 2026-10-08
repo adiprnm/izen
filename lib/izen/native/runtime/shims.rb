@@ -739,91 +739,165 @@ module Mail
   end
 end
 
-# --- Rufus::Scheduler -------------------------------------------------------
+# --- Izen::Scheduler --------------------------------------------------------
 
-# A small real scheduler: entries are registered and a background thread fires
-# those that are due (cron is matched minute-by-minute against the five-field
-# expression). Replaces the earlier shim that ran a block the moment it was
-# registered.
-module Rufus
+# Recurring task scheduler, lowered from `Izen::Scheduler`. Entries are
+# registered and a background thread fires the ones that are due (cron is
+# matched minute-by-minute against the five-field expression). This replaces the
+# `Rufus::Scheduler` shim; the `Rufus::Scheduler` alias below keeps apps written
+# against rufus-scheduler working.
+module Izen
   class Scheduler
     POLL_SECONDS = 10
     SEARCH_LIMIT = 366 * 24 * 60
 
-    def initialize
-      @entries = []
-      @running = false
-      @mutex   = Mutex.new
+    class << self
+      def default
+        @default ||= new(autostart: false)
+      end
+
+      def every(interval, options = nil, name: nil, &block)
+        default.every(interval, options, name: name, &block)
+      end
+
+      def cron(expression, options = nil, name: nil, &block)
+        default.cron(expression, options, name: name, &block)
+      end
+
+      def in(interval, options = nil, name: nil, &block)
+        default.in(interval, options, name: name, &block)
+      end
+
+      def tasks
+        default.tasks
+      end
+
+      def started?
+        default.running?
+      end
+
+      def enabled?
+        ENV["SCHEDULER"] == "1" && Database.env != "test"
+      end
+
+      def start
+        return default if started?
+        return nil unless enabled?
+
+        default.start
+      end
+
+      def start!
+        default.start
+      end
+
+      def stop
+        default.shutdown
+      end
+
+      def reset!
+        stop
+        @default = nil
+      end
+
+      def tick(now: Time.now)
+        default.tick(now: now)
+      end
+
+      def run_once(now: Time.now)
+        default.run_once(now: now)
+      end
     end
 
-    def cron(expression, _options = nil, &block)
-      add({ kind: "cron", fields: expression.to_s.split, block: block })
+    attr_reader :tasks
+
+    def initialize(autostart: true, poll: POLL_SECONDS)
+      @tasks     = []
+      @running   = false
+      @autostart = autostart
+      @poll      = poll
+      @mutex     = Mutex.new
+      @thread    = nil
     end
 
-    def every(interval, _options = nil, &block)
+    def every(interval, _options = nil, name: nil, &block)
       seconds = parse_interval(interval)
-      add({ kind: "every", seconds: seconds, block: block, next_at: Time.now + seconds })
+      add(kind: "every", seconds: seconds, block: block, name: name, next_at: Time.now + seconds)
     end
 
-    def in(interval, _options = nil, &block)
+    def cron(expression, _options = nil, name: nil, &block)
+      add(kind: "cron", fields: expression.to_s.split, block: block, name: name)
+    end
+
+    def in(interval, _options = nil, name: nil, &block)
       seconds = parse_interval(interval)
-      add({ kind: "in", block: block, next_at: Time.now + seconds })
+      add(kind: "in", block: block, name: name, next_at: Time.now + seconds)
+    end
+
+    def running?
+      @running
+    end
+
+    def start
+      return self if @running
+
+      @running = true
+      thread   = Thread.new do
+        while @running
+          sleep @poll
+          tick
+        end
+      end
+      @thread  = thread
+      self
     end
 
     def shutdown
       @running = false
-      nil
+      @thread.kill if @thread
+      @thread  = nil
     end
 
-    private
-
-    def add(entry)
-      entry[:next_at] ||= next_cron_time(entry[:fields], Time.now)
-      @mutex.synchronize { @entries << entry }
-      start
-      nil
-    end
-
-    def start
-      return if @running
-
-      @running = true
-      Thread.new do
-        while @running
-          sleep POLL_SECONDS
-          run_due
-        end
-      end
-    end
-
-    def run_due
-      now = Time.now
+    def tick(now: Time.now)
       due = []
       @mutex.synchronize do
-        @entries.each do |entry|
-          next if entry[:next_at].nil? || entry[:next_at] > now
+        @tasks.each do |task|
+          next if task[:next_at].nil? || task[:next_at] > now
 
-          due << entry
-          entry[:next_at] =
-            if entry[:kind] == "in"
-              nil
-            elsif entry[:kind] == "every"
-              now + entry[:seconds]
-            else
-              next_cron_time(entry[:fields], now)
+          due << task
+          task[:next_at] =
+            case task[:kind]
+            when "in"    then nil
+            when "every" then now + task[:seconds]
+            else next_cron_time(task[:fields], now)
             end
         end
       end
 
-      due.each do |entry|
-        next unless entry[:block]
+      due.map { |task| run_task(task, now) }
+    end
 
-        begin
-          entry[:block].call
-        rescue StandardError => e
-          warn "[scheduler] #{e.class}: #{e.message}"
-        end
-      end
+    def run_once(now: Time.now)
+      @tasks.map { |task| run_task(task, now) }
+    end
+
+    private
+
+    def add(task)
+      task[:next_at] = next_cron_time(task[:fields], Time.now) if task[:next_at].nil?
+      task[:name]    = "#{task[:kind]}:#{@tasks.size + 1}" if task[:name].nil?
+      @mutex.synchronize { @tasks << task }
+      start if @autostart
+      task
+    end
+
+    def run_task(task, now)
+      started = Time.now
+      task[:block].call
+      { name: task[:name], duration: Time.now - started, error: nil }
+    rescue StandardError => error
+      warn "[izen] scheduler task #{task[:name]} failed: #{error.class}: #{error.message}"
+      { name: task[:name], duration: Time.now - started, error: error }
     end
 
     def parse_interval(interval)
@@ -835,8 +909,8 @@ module Rufus
       end
     end
 
-    # Next time (UTC, minute granularity) the five-field cron expression
-    # matches, scanning forward one minute at a time.
+    # Next time (UTC, minute granularity) the five-field cron expression matches,
+    # scanning forward one minute at a time.
     def next_cron_time(fields, from)
       return from + 60 if fields.nil? || fields.length < 5
 
@@ -883,6 +957,12 @@ module Rufus
       end
     end
   end
+end
+
+# Backwards compatibility: apps that still `require "rufus-scheduler"` and call
+# `Rufus::Scheduler` (the generated runtime drops that require) keep working.
+module Rufus
+  Scheduler = Izen::Scheduler
 end
 
 # --- Minimal HTTP/1.1 client over TCP + TLS --------------------------------
@@ -1429,6 +1509,11 @@ module Base
         QUEUE << block
         ensure_worker
         nil
+      end
+
+      # Schedules #perform_now every +interval+ seconds on Izen::Scheduler.
+      def every(interval, name: nil)
+        Izen::Scheduler.every(interval, name: name || "job:#{self}") { perform_now }
       end
 
       def ensure_worker

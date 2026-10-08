@@ -65,6 +65,9 @@ module Izen
           env:
             clear:
               APP_ENV: production
+              # Run recurring Izen::Scheduler jobs in the web container. Leave
+              # unset to run web only.
+              # SCHEDULER: "1"
             secret:
               - SESSION_SECRET
               - APP_ENCRYPTION_KEY

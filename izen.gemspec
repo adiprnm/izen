@@ -11,8 +11,8 @@ Gem::Specification.new do |spec|
   spec.summary     = "A lightweight, module-first core for Roda + SQLite apps (no ORM)."
   spec.description = <<~DESC
     Izen (from "Rubizen" / Ruby Zen) provides plain-Ruby base classes — Model,
-    Contract, Repository, Controller, Session, Job and Mailer — plus a
-    thread-local SQLite connection, an HTTP client, an AES-256-GCM encryptor, a
+    Contract, Repository, Controller, Session, Job, Scheduler and Mailer — plus
+    a thread-local SQLite connection, an HTTP client, an AES-256-GCM encryptor, a
     minimal .env loader, and a CLI for project, migration and module
     scaffolding. No ORM, no autoloader, no framework magic.
   DESC

@@ -2,4 +2,8 @@
 
 require_relative "app"
 
+# Recurring jobs registered with `Izen::Scheduler.every` (or `Base::Job.every`)
+# run on a background thread when SCHEDULER=1. No-op otherwise, and in tests.
+Izen::Scheduler.start
+
 run App

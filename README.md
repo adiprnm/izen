@@ -19,6 +19,7 @@ for a layer built around models and schemas.
 | `Izen::Base::Session` | Signed-cookie sessions without OpenSSL |
 | `Izen::RequestCache` | Per-request memoization shared by app modules |
 | `Izen::Base::Job` | Single-thread background job base class + worker |
+| `Izen::Scheduler` | In-process recurring tasks (`every`/`cron`/`in`), replacing rufus-scheduler |
 | `Izen::Base::Batcher` | Write-behind buffer: persist fire-and-forget writes in batches |
 | `Izen::Base::Mailer` | Transactional mailer base class |
 | `Izen::Database` | Thread-local SQLite connection (WAL + foreign keys + busy timeout) |
@@ -251,6 +252,56 @@ VIEWS.push(row) # returns immediately
 The buffer lives in memory: items not yet flushed are lost on `SIGKILL` or a
 crash, but a graceful shutdown flushes them (the native server calls
 `Batcher.flush_all`). Use it for analytics-like data, not transactions.
+
+## Recurring jobs
+
+`Izen::Scheduler` runs periodic work on a single background thread inside the
+web process, so the app needs no separate worker container. It replaces the
+`rufus-scheduler` dependency (which the generated native runtime used to shim)
+with the same instance API, written in plain Ruby:
+
+```ruby
+scheduler = Izen::Scheduler.new # starts itself on the first registration
+scheduler.every(300) { Order::Expiration.new.call }
+scheduler.cron("0 2 * * *") { Backups::Manager.run }
+scheduler.in("5m") { warm_cache }
+```
+
+The class-level helpers drive one shared instance — the scaffolded `config.ru`
+starts it — and `Base::Job.every` is shorthand for scheduling a job's
+`#perform_now`:
+
+```ruby
+class Order::ExpiryJob < Izen::Base::Job
+  every 300 # same as Izen::Scheduler.every(300) { perform_now }
+
+  def perform(now = Time.now)
+    Expiration.new.call(now)
+  end
+end
+
+Izen::Scheduler.every(600) { Reports.refresh }
+```
+
+```ruby
+# config.ru
+require_relative "app"
+
+Izen::Scheduler.start # no-op unless SCHEDULER=1 (never in tests)
+
+run App
+```
+
+```sh
+SCHEDULER=1
+```
+
+The poll runs every 10 seconds, entries run one at a time (each with its own
+SQLite connection), and a failure in one entry is logged without stopping the
+others. Enable it in one process only: keep Puma in single mode
+(`WEB_CONCURRENCY=0`) and deploy a single web container, since entries are
+expected to be idempotent. For a one-off run there is `Izen::Scheduler.run_once`
+(or `tick` for just the due ones) in the current thread.
 
 ## File storage
 

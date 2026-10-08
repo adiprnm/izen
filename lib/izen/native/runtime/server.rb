@@ -117,6 +117,7 @@ module Server
       sleep 0.05
     end
     Base::Batcher.flush_all # persist buffered write-behind items before closing
+    Izen::Scheduler.stop    # stop the recurring task thread
     Database.disconnect
     $stderr.puts("shutdown complete")
   end

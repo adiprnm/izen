@@ -673,14 +673,13 @@ module Izen
 
       def write_bin
         # The source app.rb starts the scheduler in-process; the native boot has
-        # no `app.rb` top level, so replicate it here when the app ships one.
-        boot = File.file?(
-          File.join(
-            @source,
-            "app",
-            "scheduler.rb"
-          )
-        ) ? "Scheduler.start unless Database.env == \"test\"\n" : ""
+        # no `app.rb` top level, so replicate it here. `Izen::Scheduler` now
+        # ships with the runtime, and apps that still carry an `app/scheduler.rb`
+        # (rufus-scheduler style) get their `Scheduler.start` called as well.
+        boot = +"Izen::Scheduler.start unless Database.env == \"test\"\n"
+        if File.file?(File.join(@source, "app", "scheduler.rb"))
+          boot << "Scheduler.start unless Database.env == \"test\"\n"
+        end
         File.write(File.join(@out, "bin", "serve.rb"), <<~RUBY)
           # frozen_string_literal: true
 
