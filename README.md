@@ -297,8 +297,10 @@ SCHEDULER=1
 ```
 
 The poll runs every 10 seconds, entries run one at a time (each with its own
-SQLite connection), and a failure in one entry is logged without stopping the
-others. Enable it in one process only: keep Puma in single mode
+SQLite connection), and every run is logged
+(`[izen] scheduler <name> ok in <ms>ms`); a failure in one entry is logged
+without stopping the others. Enable it in one process only: keep Puma in single
+mode
 (`WEB_CONCURRENCY=0`) and deploy a single web container, since entries are
 expected to be idempotent. For a one-off run there is `Izen::Scheduler.run_once`
 (or `tick` for just the due ones) in the current thread.

@@ -892,12 +892,15 @@ module Izen
     end
 
     def run_task(task, now)
-      started = Time.now
+      started  = Time.now
       task[:block].call
-      { name: task[:name], duration: Time.now - started, error: nil }
+      duration = Time.now - started
+      warn "[izen] scheduler #{task[:name]} ok in #{(duration * 1000).to_i}ms"
+      { name: task[:name], duration: duration, error: nil }
     rescue StandardError => error
-      warn "[izen] scheduler task #{task[:name]} failed: #{error.class}: #{error.message}"
-      { name: task[:name], duration: Time.now - started, error: error }
+      duration = Time.now - started
+      warn "[izen] scheduler #{task[:name]} failed in #{(duration * 1000).to_i}ms: #{error.class}: #{error.message}"
+      { name: task[:name], duration: duration, error: error }
     end
 
     def parse_interval(interval)
